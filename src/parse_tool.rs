@@ -11,7 +11,7 @@ pub fn parse_boolean(entry: &DataEntry) -> Result<bool, EvaluationError> {
     match text {
         "Z41" => Ok(true),
         "Z42" => Ok(false),
-        _ => todo!("error handling invalid boolean")
+        _ => todo!("error handling invalid boolean"),
     }
 }
 

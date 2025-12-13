@@ -1,7 +1,7 @@
 use serde::{Deserialize, de::Visitor};
 
-use crate::Reference;
-use std::collections::HashMap;
+use crate::{EvaluationError, Reference};
+use std::collections::{BTreeMap, HashMap};
 
 #[derive(Default)]
 pub struct DataEntryVisitor {}
@@ -38,7 +38,7 @@ impl<'de> Visitor<'de> for DataEntryVisitor {
     where
         A: serde::de::MapAccess<'de>,
     {
-        let mut result: HashMap<Reference, DataEntry> = HashMap::new();
+        let mut result: BTreeMap<Reference, DataEntry> = BTreeMap::new();
 
         while let Some(entry) = map.next_entry::<Reference, DataEntry>()? {
             result.insert(entry.0, entry.1);
@@ -62,8 +62,27 @@ impl<'de> Visitor<'de> for DataEntryVisitor {
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataEntry {
     String(String),
-    IdMap(HashMap<Reference, DataEntry>),
+    IdMap(BTreeMap<Reference, DataEntry>),
     Array(Vec<DataEntry>),
+}
+
+impl DataEntry {
+    pub fn get_map_entry(&self, reference: &Reference) -> Result<&DataEntry, EvaluationError> {
+        match self {
+            Self::IdMap(map) => match map.get(reference) {
+                Some(v) => Ok(v),
+                None => Err(EvaluationError::MissingKey(reference.clone())),
+            },
+            _ => Err(EvaluationError::LowLevelNotAMap),
+        }
+    }
+
+    pub fn get_string(&self) -> Result<&str, EvaluationError> {
+        match self {
+            Self::String(s) => Ok(s.as_ref()),
+            _ => Err(EvaluationError::LowLevelNotAString),
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for DataEntry {
@@ -75,11 +94,9 @@ impl<'de> Deserialize<'de> for DataEntry {
     }
 }
 
-impl DataEntry {}
-
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, num::NonZeroU64};
+    use std::collections::BTreeMap;
 
     use crate::{DataEntry, Reference};
 
@@ -93,7 +110,7 @@ mod tests {
             )
             .unwrap(),
             DataEntry::IdMap({
-                let mut m = HashMap::new();
+                let mut m = BTreeMap::new();
                 m.insert(
                     Reference::from_u64s(Some(10), Some(1)).unwrap(),
                     DataEntry::String("a\nb".to_string()),
@@ -112,9 +129,9 @@ mod tests {
             )
             .unwrap(),
             DataEntry::IdMap({
-                let mut m = HashMap::new();
+                let mut m = BTreeMap::new();
                 m.insert(Reference::from_u64s(Some(1), None).unwrap(), {
-                    let mut m2 = HashMap::new();
+                    let mut m2 = BTreeMap::new();
                     m2.insert(
                         Reference::from_u64s(Some(2), None).unwrap(),
                         DataEntry::String("Z3".to_string()),

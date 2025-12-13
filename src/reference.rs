@@ -1,9 +1,9 @@
-use std::num::NonZeroU64;
+use std::{fmt::{Debug, Display}, num::NonZeroU64};
 
 use anyhow::{Context, bail};
 use serde::{Deserialize, de::Visitor};
 
-#[derive(Copy, Clone, Hash, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 /// At least one of the value is Some
 pub struct Reference(Option<NonZeroU64>, Option<NonZeroU64>);
 
@@ -66,6 +66,24 @@ impl Reference {
         ))
     }
 
+    pub const fn from_u64s_panic(z: Option<u64>, k: Option<u64>) -> Self {
+        if z.is_none() && k.is_none() {
+            panic!("z and k should not be both None");
+        }
+        Self(
+            if let Some(z) = z {
+                Some(NonZeroU64::new(z).unwrap())
+            } else {
+                None
+            },
+            if let Some(k) = k {
+                Some(NonZeroU64::new(k).unwrap())
+            } else {
+                None
+            },
+        )
+    }
+
     pub fn to_zid(&self) -> String {
         if let Some(z) = self.0 {
             if let Some(k) = self.1 {
@@ -83,10 +101,23 @@ impl Reference {
     }
 }
 
-#[derive(Default)]
-pub(crate) struct IdentifierVisitor {}
+impl Display for Reference {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.to_zid())
+    }
+}
 
-impl<'de> Visitor<'de> for IdentifierVisitor {
+impl Debug for Reference {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // That’s probably good. This reference has quite a specific and recogniseable syntax
+        f.write_str(&self.to_zid())
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct ReferenceVisitor {}
+
+impl<'de> Visitor<'de> for ReferenceVisitor {
     type Value = Reference;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -113,7 +144,7 @@ impl<'de> Deserialize<'de> for Reference {
     where
         D: serde::Deserializer<'de>,
     {
-        deserializer.deserialize_str(IdentifierVisitor::default())
+        deserializer.deserialize_str(ReferenceVisitor::default())
     }
 }
 

@@ -68,16 +68,27 @@ pub enum DataEntry {
 
 impl DataEntry {
     pub fn get_map_entry(&self, reference: &Reference) -> Result<&DataEntry, EvaluationError> {
+        match self.get_map()?.get(reference) {
+            Some(v) => Ok(v),
+            None => Err(EvaluationError::MissingKey(reference.clone())),
+        }
+    }
+
+    pub fn get_map(&self) -> Result<&BTreeMap<Reference, DataEntry>, EvaluationError> {
         match self {
-            Self::IdMap(map) => match map.get(reference) {
-                Some(v) => Ok(v),
-                None => Err(EvaluationError::MissingKey(reference.clone())),
-            },
+            Self::IdMap(map) => Ok(map),
             _ => Err(EvaluationError::LowLevelNotAMap),
         }
     }
 
-    pub fn get_string(&self) -> Result<&str, EvaluationError> {
+    pub fn get_array(&self) -> Result<&Vec<DataEntry>, EvaluationError> {
+        match self {
+            Self::Array(array) => Ok(array),
+            _ => Err(EvaluationError::LowLevelNotAnArray),
+        }
+    }
+
+    pub fn get_str(&self) -> Result<&str, EvaluationError> {
         match self {
             Self::String(s) => Ok(s.as_ref()),
             _ => Err(EvaluationError::LowLevelNotAString),

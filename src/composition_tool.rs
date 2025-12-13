@@ -13,10 +13,10 @@ pub fn recurse_and_replace_placeholder(
         DataEntry::IdMap(map) => {
             if let Some(object_type) = map.get(&Z1K1) {
                 //TODO: I think in some case this might be a function call itself
-                if object_type.get_string().unwrap() == "Z18" {
+                if object_type.get_str().unwrap() == "Z18" {
                     if let Some(key) = map.get(&Z18K1) {
                         let ref_to_use_to_replace = Reference::from_zid(
-                            key.get_string()
+                            key.get_str()
                                 .map_err(|e| e.trace("inside a Z18K1".to_string()))?,
                         )
                         .map_err(EvaluationError::ParseZID)
@@ -32,17 +32,24 @@ pub fn recurse_and_replace_placeholder(
 
             let mut new_map = BTreeMap::new();
             for (key, value) in map.iter() {
-                new_map.insert(key.to_owned(), recurse_and_replace_placeholder(value, to_replace).map_err(|e| e.trace(format!("Inside {}", key)))?);
+                new_map.insert(
+                    key.to_owned(),
+                    recurse_and_replace_placeholder(value, to_replace)
+                        .map_err(|e| e.trace(format!("Inside {}", key)))?,
+                );
             }
-            return Ok(DataEntry::IdMap(new_map))
-        },
+            return Ok(DataEntry::IdMap(new_map));
+        }
         DataEntry::Array(array) => {
             let mut new_array = Vec::new();
             for (pos, value) in array.iter().enumerate() {
-                new_array.push(recurse_and_replace_placeholder(value, to_replace).map_err(|e| e.trace(format!("Position {} in the array", pos)))?);
+                new_array.push(
+                    recurse_and_replace_placeholder(value, to_replace)
+                        .map_err(|e| e.trace(format!("Position {} in the array", pos)))?,
+                );
             }
-            return Ok(DataEntry::Array(new_array))
-        },
-        DataEntry::String(v) => Ok(DataEntry::String(v.clone()))
+            return Ok(DataEntry::Array(new_array));
+        }
+        DataEntry::String(v) => Ok(DataEntry::String(v.clone())),
     }
 }

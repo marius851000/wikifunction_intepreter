@@ -1,7 +1,7 @@
 use crate::{DataEntry, EvaluationError, Reference};
 
 pub fn parse_zid_string(entry: &DataEntry) -> Result<Reference, EvaluationError> {
-    Ok(Reference::from_zid(entry.get_string()?).map_err(|e| EvaluationError::ParseZID(e))?)
+    Ok(Reference::from_zid(entry.get_str()?).map_err(|e| EvaluationError::ParseZID(e))?)
 }
 
 pub fn get_persistant_object_value(entry: &DataEntry) -> Result<&DataEntry, EvaluationError> {

@@ -6,6 +6,8 @@ use crate::Reference;
 pub enum EvaluationError {
     #[error("low level: Not a map")]
     LowLevelNotAMap,
+    #[error("low level: Not an array")]
+    LowLevelNotAnArray,
     #[error("low level: Not a string")]
     LowLevelNotAString,
     #[error("low level: missing key {0}")]

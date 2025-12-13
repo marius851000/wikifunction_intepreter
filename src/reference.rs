@@ -1,4 +1,7 @@
-use std::{fmt::{Debug, Display}, num::NonZeroU64};
+use std::{
+    fmt::{Debug, Display},
+    num::NonZeroU64,
+};
 
 use anyhow::{Context, bail};
 use serde::{Deserialize, de::Visitor};

@@ -82,6 +82,80 @@ impl Runner {
         todo!();
     }
 
+    pub fn get_preferred_persistant_implementation(
+        &self,
+        function_persistant: &DataEntry,
+        option: &RunnerOption,
+    ) -> Result<&DataEntry, EvaluationError> {
+        let function_id = get_persistant_object_id(function_persistant)
+            .map_err(|e| e.trace("getting the function id".to_string()))?;
+
+        if let Some(force_use_impl) = &option.force_use_impl
+            && let Some(implementation_id) = force_use_impl.get(&function_id)
+        {
+            Ok(self
+                .get_entry_for_reference(&implementation_id)
+                .map_err(|e| {
+                    e.trace("loading specifically specified implementation".to_string())
+                })?)
+        } else {
+            const Z8K4: Reference = Reference::from_u64s_panic(Some(8), Some(4)); // implementations
+            const Z14K2: Reference = Reference::from_u64s_panic(Some(14), Some(2)); // impl->composition
+            const Z14K4: Reference = Reference::from_u64s_panic(Some(14), Some(4)); // impl->builtins
+
+            let function = get_persistant_object_value(function_persistant)
+                .map_err(|e| e.trace("processing persistant function to call".to_string()))?;
+
+            let implementations_raw = function
+                .get_map_entry(&Z8K4)
+                .map_err(|e| e.trace("getting implementations".to_string()))?;
+            let implementations_ref = implementations_raw
+                .get_array()
+                .map_err(|e| e.trace("getting implementations".to_string()))?;
+
+            // It appears connected functions are just function that are directly referenced by it (as opposed to inverse reference)
+            // TODO: better handling of typed array
+            // TODO: prioritize composition, then built-in, then finally code
+            for implementation_key_text in implementations_ref.iter().skip(1) {
+                let implementation_key = Reference::from_zid(
+                    implementation_key_text
+                        .get_str()
+                        .map_err(|e| e.trace("Parsing implementation list".to_string()))?,
+                )
+                .map_err(EvaluationError::ParseZID)
+                .map_err(|e| e.trace("processing an implementation reference".to_string()))?;
+
+                let implementation_persistant = self
+                    .get_entry_for_reference(&implementation_key)
+                    .map_err(|e| {
+                    e.trace("trying to get a referrenced implementation".to_string())
+                })?;
+                let implementation = get_persistant_object_value(implementation_persistant)
+                    .map_err(|e| e.trace("processing an implementation".to_string()))?;
+
+                let implementation_map = implementation
+                    .get_map()
+                    .map_err(|e| e.trace("processing an implementation".to_string()))?;
+
+                // check if it have a composition implementation
+                if let Some(_) = implementation_map.get(&Z14K2) {
+                    return Ok(implementation_persistant);
+                }
+
+                if let Some(_) = implementation_map.get(&Z14K4) {
+                    return Ok(implementation_persistant);
+                }
+            }
+
+            // TODO: builtins
+            // TODO: code
+            todo!(
+                "code and builtins (and fail if none found) (for {})",
+                function_id
+            )
+        }
+    }
+
     pub fn run_function_call(
         &self,
         function_call: &DataEntry,
@@ -99,18 +173,8 @@ impl Runner {
             .get_entry_for_reference(&function_id)
             .map_err(|e| e.trace("trying to get the function to call".to_string()))?;
 
-        let function = get_persistant_object_value(function_persistant)
-            .map_err(|e| e.trace("processing persistant function to call".to_string()))?;
-
-        let implementation_persistant = if let Some(force_use_impl) = &option.force_use_impl
-            && let Some(implementation_id) = force_use_impl.get(&function_id)
-        {
-            self.get_entry_for_reference(&implementation_id)
-                .map_err(|e| e.trace("loading specifically specified implementation".to_string()))?
-        } else {
-            println!("{:?}, {:?}", function_id, option);
-            todo!("pick an implementation from a function");
-        };
+        let implementation_persistant =
+            self.get_preferred_persistant_implementation(function_persistant, option)?;
 
         let implementation = get_persistant_object_value(implementation_persistant)
             .map_err(|e| e.trace("processing persistant implementation to call".to_string()))?;
@@ -144,21 +208,24 @@ impl Runner {
         option: &RunnerOption,
     ) -> Result<DataEntry, EvaluationError> {
         const Z14K2: Reference = Reference::from_u64s_panic(Some(14), Some(2));
-        match implementation.get_map_entry(&Z14K2) {
-            Ok(composition) => {
-                return self.run_composition(
-                    composition,
-                    &implementation_provenance.to_other(vec![Z14K2]),
-                    function_call,
-                    function_call_provenance,
-                    option,
-                );
-            }
-            Err(EvaluationError::MissingKey(_)) => (),
-            Err(err) => return Err(err),
+        const Z14K4: Reference = Reference::from_u64s_panic(Some(14), Some(4));
+
+        let impl_map = implementation.get_map()?;
+        if let Some(composition) = impl_map.get(&Z14K2) {
+            return self.run_composition(
+                composition,
+                &implementation_provenance.to_other(vec![Z14K2]),
+                function_call,
+                function_call_provenance,
+                option,
+            );
         };
 
-        todo!("code implementation and error if neither are present")
+        if let Some(builtin) = impl_map.get(&Z14K4) {
+            return self.run_builtin(builtin, function_call, function_call_provenance, option);
+        }
+
+        todo!("code implementation and error if no impl are present")
     }
 
     pub fn run_composition(
@@ -217,7 +284,7 @@ impl Runner {
             DataEntry::IdMap(map) => {
                 if let Some(object_type) = map.get(&Z1K1) {
                     if object_type
-                        .get_string()
+                        .get_str()
                         .map_err(|e| e.trace("Inside Z1K1".to_string()))?
                         == "Z7"
                     {
@@ -249,5 +316,44 @@ impl Runner {
             }
             DataEntry::String(s) => Ok(DataEntry::String(s.to_string())),
         }
+    }
+
+    pub fn run_builtin(
+        &self,
+        builtin: &DataEntry,
+        function_call: &DataEntry,
+        function_call_provenance: &Provenance,
+        option: &RunnerOption,
+    ) -> Result<DataEntry, EvaluationError> {
+        const Z6K1: Reference = Reference::from_u64s_panic(Some(6), Some(1));
+        let implementation_id = builtin
+            .get_map_entry(&Z6K1)
+            .map_err(|e| e.trace("Getting the implementation id to run".to_string()))?
+            .get_str()
+            .map_err(|e| e.trace("Getting the implementation id to run".to_string()))?;
+        // let’s force the use of composition implementation as much as posible to reduce the built-ins that needs to be implemented
+        let impl_to_use = match implementation_id {
+            // string equality
+            "Z966" => Some(Reference::from_u64s_panic(Some(17569), None)),
+            _ => None,
+        };
+
+        if let Some(impl_to_use) = impl_to_use {
+            let implementation_persistant = self
+                .get_entry_for_reference(&impl_to_use)
+                .map_err(|e| e.trace("Getting the implementation to run".to_string()))?;
+            let implementation = get_persistant_object_value(implementation_persistant)
+                .map_err(|e| e.trace("Getting the implementation to run".to_string()))?;
+            let implementation_provenance = Provenance::Persistant(impl_to_use);
+
+            return self.run_implementation(
+                implementation,
+                &implementation_provenance,
+                function_call,
+                function_call_provenance,
+                option,
+            );
+        }
+        todo!("built-in {}", implementation_id)
     }
 }

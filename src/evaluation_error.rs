@@ -22,6 +22,10 @@ impl EvaluationError {
     pub fn trace(self, message: String) -> Self {
         Self::Previous(message, Box::new(self))
     }
+
+    pub fn trace_str(self, message: &str) -> Self {
+        self.trace(message.to_string())
+    }
 }
 
 #[derive(Debug, Clone)]

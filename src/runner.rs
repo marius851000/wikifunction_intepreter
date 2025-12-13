@@ -6,7 +6,7 @@ use std::{
 use crate::{
     DataEntry, EvaluationError, GlobalDatas, Reference,
     evaluation_error::Provenance,
-    parse_tool::{get_persistant_object_id, get_persistant_object_value, parse_zid_string},
+    parse_tool::{get_persistant_object_id, get_persistant_object_value, parse_boolean, parse_zid_string},
     recurse_and_replace_placeholder,
 };
 
@@ -335,6 +335,8 @@ impl Runner {
         let impl_to_use = match implementation_id {
             // string equality
             "Z966" => Some(Reference::from_u64s_panic(Some(17569), None)),
+            // list equality. Some weird behavior around typed list. Might be a problem in certain cases.
+            "Z989" => Some(Reference::from_u64s_panic(Some(15872), None)),
             _ => None,
         };
 
@@ -354,6 +356,38 @@ impl Runner {
                 option,
             );
         }
-        todo!("built-in {}", implementation_id)
+
+        let provenance_other = function_call_provenance.to_other(Vec::new());
+
+        match implementation_id {
+            // If
+            "Z902" => {
+                const Z802K1: Reference = Reference::from_u64s_panic(Some(802), Some(1)); // condition
+                const Z802K2: Reference = Reference::from_u64s_panic(Some(802), Some(2)); // then
+                const Z802K3: Reference = Reference::from_u64s_panic(Some(802), Some(3)); // else
+
+                let condition = self.recurse_call_function(
+                    function_call.get_map_entry(&Z802K1)?,
+                    &provenance_other,
+                    option
+                ).map_err(|e| e.trace_str("parsing condition"))?;
+                let condition = parse_boolean(&condition).map_err(|e| e.trace_str("parsing condition"))?;
+
+                let entry_to_use = if condition {
+                    Z802K2
+                } else {
+                    Z802K3
+                };
+
+                let result = self.recurse_call_function(
+                    function_call.get_map_entry(&entry_to_use)?,
+                    &provenance_other,
+                    option
+                ).map_err(|e| e.trace(format!("evaluating result for {:?}", condition)))?;
+
+                return Ok(result)
+            },
+            _ => todo!("built-in {}", implementation_id)
+        }
     }
 }

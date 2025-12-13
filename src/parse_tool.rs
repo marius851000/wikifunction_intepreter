@@ -4,6 +4,17 @@ pub fn parse_zid_string(entry: &DataEntry) -> Result<Reference, EvaluationError>
     Ok(Reference::from_zid(entry.get_str()?).map_err(|e| EvaluationError::ParseZID(e))?)
 }
 
+pub fn parse_boolean(entry: &DataEntry) -> Result<bool, EvaluationError> {
+    const Z40K1: Reference = Reference::from_u64s_panic(Some(40), Some(1));
+    let text = entry.get_map_entry(&Z40K1)?.get_str()?;
+
+    match text {
+        "Z41" => Ok(true),
+        "Z42" => Ok(false),
+        _ => todo!("error handling invalid boolean")
+    }
+}
+
 pub fn get_persistant_object_value(entry: &DataEntry) -> Result<&DataEntry, EvaluationError> {
     const Z2K2: Reference = Reference::from_u64s_panic(Some(2), Some(2));
     Ok(entry.get_map_entry(&Z2K2)?)

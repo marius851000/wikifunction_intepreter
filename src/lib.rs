@@ -8,7 +8,7 @@ mod globaldatas;
 pub use globaldatas::GlobalDatas;
 
 mod runner;
-pub use runner::Runner;
+pub use runner::{Runner, RunnerOption};
 
 mod evaluation_error;
 pub use evaluation_error::EvaluationError;

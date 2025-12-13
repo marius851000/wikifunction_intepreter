@@ -1,7 +1,7 @@
 use serde::{Deserialize, de::Visitor};
 
 use crate::{EvaluationError, Reference};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 #[derive(Default)]
 pub struct DataEntryVisitor {}

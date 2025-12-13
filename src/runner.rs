@@ -108,48 +108,53 @@ impl Runner {
             .run_function_call(function_call, &function_call_provenance, &runner_option)
             .map_err(|e| e.trace("running function to test".to_string()))?;
 
-        let validator = test_case_persistant
-            .get_map_entry(&Z2K2)
-            .map_err(|e| e.trace("on the test case".to_string()))?
-            .get_map_entry(&Z20K3)
-            .map_err(|e| e.trace("on the test case, inside Z2K2".to_string()))?;
+        (|| {
+            let validator = test_case_persistant
+                .get_map_entry(&Z2K2)
+                .map_err(|e| e.trace("on the test case".to_string()))?
+                .get_map_entry(&Z20K3)
+                .map_err(|e| e.trace("on the test case, inside Z2K2".to_string()))?;
 
-        // validator is a function call. replace first parameter with the result
+            // validator is a function call. replace first parameter with the result
 
-        let validator_function_id = parse_zid_string(
-            validator
-                .get_map_entry(&Z7K1)
-                .map_err(|e| e.trace_str("on the validator"))?,
-        )
-        .map_err(|e| e.trace_str("on the validator"))?;
-
-        let inserted_validation_ref =
-            Reference::from_u64s_panic(validator_function_id.get_z().map(|x| x.into()), Some(1));
-
-        let mut validator_modified = validator.clone();
-        match &mut validator_modified {
-            DataEntry::IdMap(map) => {
-                map.insert(inserted_validation_ref, test_fn_result);
-            }
-            _ => todo!("error handling in that case"),
-        }
-
-        let validator_result = self
-            .run_function_call(
-                &validator_modified,
-                &Provenance::Runtime,
-                &RunnerOption::default(),
+            let validator_function_id = parse_zid_string(
+                validator
+                    .get_map_entry(&Z7K1)
+                    .map_err(|e| e.trace_str("on the validator"))?,
             )
-            .map_err(|e| e.trace_str("running the validator function"))?;
+            .map_err(|e| e.trace_str("on the validator"))?;
 
-        let test_result = parse_boolean(&validator_result)
-            .map_err(|e| e.trace_str("parsing the validator result boolean"))?;
+            let inserted_validation_ref = Reference::from_u64s_panic(
+                validator_function_id.get_z().map(|x| x.into()),
+                Some(1),
+            );
 
-        if !test_result {
-            return Err(EvaluationError::TestSuiteFailed);
-        }
+            let mut validator_modified = validator.clone();
+            match &mut validator_modified {
+                DataEntry::IdMap(map) => {
+                    map.insert(inserted_validation_ref, test_fn_result.clone());
+                }
+                _ => todo!("error handling in that case"),
+            }
 
-        return Ok(());
+            let validator_result = self
+                .run_function_call(
+                    &validator_modified,
+                    &Provenance::Runtime,
+                    &RunnerOption::default(),
+                )
+                .map_err(|e| e.trace_str("running the validator function"))?;
+
+            let test_result = parse_boolean(&validator_result)
+                .map_err(|e| e.trace_str("parsing the validator result boolean"))?;
+
+            if !test_result {
+                return Err(EvaluationError::TestSuiteFailed(test_fn_result.clone()));
+            }
+
+            Ok(())
+        })()
+        .map_err(|e| EvaluationError::TestResultInfo(test_fn_result, Box::new(e)))
     }
 
     pub fn get_preferred_persistant_implementation(
@@ -306,18 +311,9 @@ impl Runner {
         function_call_provenance: &Provenance,
         option: &RunnerOption,
     ) -> Result<DataEntry, EvaluationError> {
-        const Z7K1: Reference = Reference::from_u64s_panic(Some(7), Some(1));
-
         // algorithm:
         // 1. replace all Z18 by their actual value
         // 2. work top-down, recursively. If entry is Z7, perform the function call. If not, recurse deeper
-
-        let function_id = function_call.get_map_entry(&Z7K1).map_err(|e| {
-            e.trace(format!(
-                "inside function call from {:?}",
-                function_call_provenance
-            ))
-        })?;
 
         let composition_with_substitution_done = match function_call {
             DataEntry::IdMap(to_replace) => {
@@ -495,7 +491,7 @@ impl Runner {
                 let boolean2 =
                     parse_boolean(&boolean2).map_err(|e| e.trace_str("parsing first boolean"))?;
 
-                return Ok(self.get_bool(boolean1 && boolean2)?.clone());
+                return Ok(self.get_bool(boolean1 == boolean2)?.clone());
             }
             _ => todo!("built-in {}", implementation_id),
         }

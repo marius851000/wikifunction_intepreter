@@ -1,6 +1,8 @@
 use std::{fs::File, io::BufReader, sync::Arc};
 
-use interpreter::{GlobalDatas, Reference, Runner};
+use interpreter::{
+    GlobalDatas, Reference, Runner, RunnerOption, parse_tool::get_persistant_object_value,
+};
 
 fn main() -> anyhow::Result<()> {
     let file =
@@ -14,16 +16,30 @@ fn main() -> anyhow::Result<()> {
     }
 
     let runner = Runner::new(Arc::new(gb));
-    runner
-        .run_test_case(
-            runner
-                .get_entry_for_reference(&Reference::from_zid("Z8130").unwrap())
-                .unwrap(),
-            runner
-                .get_entry_for_reference(&Reference::from_zid("Z913").unwrap())
-                .unwrap(),
-        )
-        .map_err(|e| e.trace("running the test test case".to_string()))?;
+
+    for test_to_run in [
+        // is empty list
+        "Z8130", "Z8131",
+    ] {
+        let test_case_persistant = runner
+            .get_entry_for_reference(&Reference::from_zid(test_to_run).unwrap())
+            .unwrap();
+        let function_id_string = get_persistant_object_value(test_case_persistant)
+            .unwrap()
+            .get_map_entry(&Reference::from_u64s_panic(Some(20), Some(1)))
+            .unwrap()
+            .get_str()
+            .unwrap();
+        let function_persistant = runner
+            .get_entry_for_reference(&Reference::from_zid(function_id_string).unwrap())
+            .unwrap();
+        let implementation_persistant = runner
+            .get_preferred_persistant_implementation(function_persistant, &RunnerOption::default())
+            .unwrap();
+        runner
+            .run_test_case(test_case_persistant, implementation_persistant)
+            .map_err(|e| e.trace(format!("running the test case {}", test_to_run)))?;
+    }
 
     Ok(())
 }

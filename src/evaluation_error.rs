@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::Reference;
+use crate::{DataEntry, Reference};
 
 //TODO: error handling should be much better than that. Will do for now.
 #[derive(Error, Debug)]
@@ -16,8 +16,10 @@ pub enum EvaluationError {
     #[error("low level: parse ZID")]
     ParseZID(#[source] anyhow::Error),
     #[error("low level: validator result not true")]
-    TestSuiteFailed,
-    #[error("trace: {0}")]
+    TestSuiteFailed(DataEntry),
+    #[error("info: test result: {0:?}")]
+    TestResultInfo(DataEntry, #[source] Box<EvaluationError>),
+    #[error("info: trace: {0}")]
     Previous(String, #[source] Box<EvaluationError>),
 }
 

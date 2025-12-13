@@ -11,6 +11,14 @@ use serde::{Deserialize, de::Visitor};
 pub struct Reference(Option<NonZeroU64>, Option<NonZeroU64>);
 
 impl Reference {
+    pub fn get_z(&self) -> Option<NonZeroU64> {
+        self.0
+    }
+
+    pub fn get_k(&self) -> Option<NonZeroU64> {
+        self.1
+    }
+
     pub fn from_zid(text: &str) -> anyhow::Result<Self> {
         let mut k_splitted = text.split('K');
 

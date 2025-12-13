@@ -55,12 +55,16 @@ impl Runner {
         self.get_value_for_reference(&Reference::from_u64s_panic(Some(42), None))
     }
 
-    // should return a Z22 "Evaluation result"
+    pub fn get_bool(&self, b: bool) -> Result<&DataEntry, EvaluationError> {
+        if b { self.get_true() } else { self.get_false() }
+    }
+
+    // return an error whether an error occur or the test result is incorrect
     pub fn run_test_case(
         &self,
         test_case_persistant: &DataEntry,
         implementation_persistant: &DataEntry,
-    ) -> Result<DataEntry, EvaluationError> {
+    ) -> Result<(), EvaluationError> {
         const Z14K1: Reference = Reference::from_u64s_panic(Some(14), Some(1)); // implementation->function
         const Z2K2: Reference = Reference::from_u64s_panic(Some(2), Some(2)); // persistent object->value
 
@@ -86,7 +90,10 @@ impl Runner {
 
         let test_case_persistant_id = get_persistant_object_id(test_case_persistant)
             .map_err(|e| e.trace("processing persistant test case".to_string()))?;
+
         const Z20K2: Reference = Reference::from_u64s_panic(Some(20), Some(2));
+        const Z20K3: Reference = Reference::from_u64s_panic(Some(20), Some(3));
+        const Z7K1: Reference = Reference::from_u64s_panic(Some(7), Some(1));
         let function_call = test_case_persistant
             .get_map_entry(&Z2K2)
             .map_err(|e| e.trace("on the test case".to_string()))?
@@ -97,9 +104,52 @@ impl Runner {
         let function_call_provenance =
             Provenance::FromOther(Box::new(test_case_provenance), vec![Z2K2, Z20K2]);
 
-        self.run_function_call(function_call, &function_call_provenance, &runner_option)
+        let test_fn_result = self
+            .run_function_call(function_call, &function_call_provenance, &runner_option)
             .map_err(|e| e.trace("running function to test".to_string()))?;
-        todo!();
+
+        let validator = test_case_persistant
+            .get_map_entry(&Z2K2)
+            .map_err(|e| e.trace("on the test case".to_string()))?
+            .get_map_entry(&Z20K3)
+            .map_err(|e| e.trace("on the test case, inside Z2K2".to_string()))?;
+
+        // validator is a function call. replace first parameter with the result
+
+        let validator_function_id = parse_zid_string(
+            validator
+                .get_map_entry(&Z7K1)
+                .map_err(|e| e.trace_str("on the validator"))?,
+        )
+        .map_err(|e| e.trace_str("on the validator"))?;
+
+        let inserted_validation_ref =
+            Reference::from_u64s_panic(validator_function_id.get_z().map(|x| x.into()), Some(1));
+
+        let mut validator_modified = validator.clone();
+        match &mut validator_modified {
+            DataEntry::IdMap(map) => {
+                map.insert(inserted_validation_ref, test_fn_result);
+            }
+            _ => todo!("error handling in that case"),
+        }
+
+        let validator_result = self
+            .run_function_call(
+                &validator_modified,
+                &Provenance::Runtime,
+                &RunnerOption::default(),
+            )
+            .map_err(|e| e.trace_str("running the validator function"))?;
+
+        let test_result = parse_boolean(&validator_result)
+            .map_err(|e| e.trace_str("parsing the validator result boolean"))?;
+
+        if !test_result {
+            return Err(EvaluationError::TestSuiteFailed);
+        }
+
+        return Ok(());
     }
 
     pub fn get_preferred_persistant_implementation(
@@ -203,20 +253,20 @@ impl Runner {
                 |e| e.trace("processing persistant implementation to calll".to_string()),
             )?);
 
-        self.run_implementation(
-            implementation,
-            &implementation_provenance,
-            function_call,
-            function_call_provenance,
-            option,
-        )
-        .map_err(|e| {
-            e.trace(format!(
-                "calling implementation {:?}",
-                implementation_provenance
-            ))
-        })?;
-        todo!();
+        return Ok(self
+            .run_implementation(
+                implementation,
+                &implementation_provenance,
+                function_call,
+                function_call_provenance,
+                option,
+            )
+            .map_err(|e| {
+                e.trace(format!(
+                    "calling implementation {:?}",
+                    implementation_provenance
+                ))
+            })?);
     }
 
     pub fn run_implementation(
@@ -419,11 +469,33 @@ impl Runner {
                 )?;
 
                 // <= 1 cause typed list store the type as the first index
-                if list.get_array()?.len() <= 1 {
-                    return Ok(self.get_true()?.clone());
-                } else {
-                    return Ok(self.get_false()?.clone());
-                }
+                return Ok(self.get_bool(list.get_array()?.len() <= 1)?.clone());
+            }
+            // boolean equality
+            "Z944" => {
+                const Z844K1: Reference = Reference::from_u64s_panic(Some(844), Some(1));
+                const Z844K2: Reference = Reference::from_u64s_panic(Some(844), Some(2));
+
+                let boolean1 = self
+                    .recurse_call_function(
+                        function_call.get_map_entry(&Z844K1)?,
+                        &provenance_other,
+                        option,
+                    )
+                    .map_err(|e| e.trace_str("parsing first boolean"))?;
+                let boolean1 =
+                    parse_boolean(&boolean1).map_err(|e| e.trace_str("parsing first boolean"))?;
+                let boolean2 = self
+                    .recurse_call_function(
+                        function_call.get_map_entry(&Z844K2)?,
+                        &provenance_other,
+                        option,
+                    )
+                    .map_err(|e| e.trace_str("parsing second boolean"))?;
+                let boolean2 =
+                    parse_boolean(&boolean2).map_err(|e| e.trace_str("parsing first boolean"))?;
+
+                return Ok(self.get_bool(boolean1 && boolean2)?.clone());
             }
             _ => todo!("built-in {}", implementation_id),
         }

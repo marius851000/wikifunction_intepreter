@@ -17,10 +17,10 @@ fn main() -> anyhow::Result<()> {
     runner
         .run_test_case(
             runner
-                .get_entry_for_reference(&Reference::from_zid("Z13523").unwrap())
+                .get_entry_for_reference(&Reference::from_zid("Z8130").unwrap())
                 .unwrap(),
             runner
-                .get_entry_for_reference(&Reference::from_zid("Z14118").unwrap())
+                .get_entry_for_reference(&Reference::from_zid("Z913").unwrap())
                 .unwrap(),
         )
         .map_err(|e| e.trace("running the test test case".to_string()))?;

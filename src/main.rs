@@ -20,6 +20,9 @@ fn main() -> anyhow::Result<()> {
     for test_to_run in [
         // is empty list
         "Z8130", "Z8131",
+
+        // other stuff
+        "Z10071"
     ] {
         let test_case_persistant = runner
             .get_entry_for_reference(&Reference::from_zid(test_to_run).unwrap())

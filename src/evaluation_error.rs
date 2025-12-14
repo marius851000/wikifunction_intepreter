@@ -17,6 +17,8 @@ pub enum EvaluationError {
     ParseZID(#[source] anyhow::Error),
     #[error("low level: validator result not true")]
     TestSuiteFailed(DataEntry),
+    #[error("low level: unimplemented {0}")]
+    Unimplemented(String),
     #[error("info: test result: {0:?}")]
     TestResultInfo(DataEntry, #[source] Box<EvaluationError>),
     #[error("info: trace: {0}")]

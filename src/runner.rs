@@ -493,7 +493,7 @@ impl Runner {
 
                 return Ok(self.get_bool(boolean1 == boolean2)?.clone());
             }
-            _ => todo!("built-in {}", implementation_id),
+            _ => return Err(EvaluationError::Unimplemented(format!("built-in {}", implementation_id))),
         }
     }
 }

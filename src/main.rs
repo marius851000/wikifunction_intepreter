@@ -17,9 +17,9 @@ fn main() -> anyhow::Result<()> {
 
     for test_to_run in [
         // is empty list
-        "Z8130", "Z8131",
-        // other stuff
-        // "Z10071"
+        "Z8130", "Z8131", // reify/abstract
+        "Z15796", "Z15800", // other stuff
+        "Z10071",
     ] {
         let test_case_persistent = runner
             .get_persistent_object::<WfTestCase>(&Zid::from_zid(test_to_run).unwrap())

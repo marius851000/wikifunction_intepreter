@@ -11,6 +11,15 @@ pub fn parse_string_type(entry: &DataEntry) -> Result<&str, EvaluationError> {
     Ok(entry.get_map_entry(&zid!(6, 1))?.get_str()?)
 }
 
+pub fn raw_string_to_object_string(input: String) -> DataEntry {
+    DataEntry::IdMap({
+        let mut map = BTreeMap::new();
+        map.insert(zid!(1, 1), DataEntry::String("Z6".to_string()));
+        map.insert(zid!(6, 1), DataEntry::String(input));
+        map
+    })
+}
+
 pub fn parse_boolean(entry: &DataEntry) -> Result<bool, EvaluationError> {
     let text = entry.get_map_entry(&zid!(40, 1))?.get_str()?;
 
@@ -66,6 +75,13 @@ pub struct PotentialReference<'l, T: WfParse<'l>> {
 }
 
 impl<'l, T: WfParse<'l>> PotentialReference<'l, T> {
+    pub fn new(entry: &'l DataEntry) -> Self {
+        Self {
+            entry,
+            phantom: PhantomData::default(),
+        }
+    }
+
     /// Note that it only evaluate reference an not function calls or reference to argument
     pub fn evaluate(&self, runner: &'l Runner) -> Result<T, EvaluationError> {
         Ok(match self.entry {

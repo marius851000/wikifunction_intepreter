@@ -427,6 +427,13 @@ impl Runner {
 
                 return Ok(result);
             }
+            // Reify
+            "Z905" => {
+                let input = function_call.get_arg(&zid!(805, 1))?;
+                return Ok(input
+                    .reify(&self)
+                    .map_err(|e| e.trace_str("running built-in reify"))?);
+            }
             // Is empty (typed) list
             "Z913" => {
                 let list = self.recurse_call_function(

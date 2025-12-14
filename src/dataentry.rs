@@ -1,7 +1,7 @@
 use serde::{Deserialize, de::Visitor};
 
 use crate::{
-    EvaluationError, Zid,
+    EvaluationError, Runner, Zid,
     parse_tool::{PotentialReference, WfParse},
 };
 use std::collections::BTreeMap;
@@ -66,7 +66,7 @@ impl<'de> Visitor<'de> for DataEntryVisitor {
 pub enum DataEntry {
     String(String),
     IdMap(BTreeMap<Zid, DataEntry>),
-    Array(Vec<DataEntry>),
+    Array(Vec<DataEntry>), // TODO: the language does not really have array, it’s a representation of a typed linked list for compresion, I guess. Decide whether I keep that as-is or I transform it to IdMap at runtime
 }
 
 impl DataEntry {
@@ -120,6 +120,66 @@ impl DataEntry {
         match self {
             Self::String(s) => Ok(s.as_ref()),
             _ => Err(EvaluationError::LowLevelNotAString),
+        }
+    }
+
+    /// transform the representation into something the running code can parse. Take care of typed list, that are only vec for the json format!
+    pub fn reify(&self, runner: &Runner) -> Result<DataEntry, EvaluationError> {
+        //TODO: should we follow reference here? Confused...
+        /*let self_pointed = PotentialReference::<WfUntyped<'_>>::new(self)
+            .evaluate(runner)
+            .map_err(|e| e.trace_str("looking up references"))?
+            .entry;
+        */
+
+        let well_typed_pair = Self::IdMap({
+            let mut map = BTreeMap::new();
+            map.insert(zid!(1, 1), Self::String("Z7".to_string()));
+            map.insert(zid!(7, 1), Self::String("Z882".to_string()));
+            map.insert(zid!(882, 1), Self::String("Z39".to_string()));
+            map.insert(zid!(882, 2), Self::String("Z2".to_string()));
+            map
+        });
+
+        match self {
+            // the result should be ordered. As are the BTreeMap.
+            Self::String(value) => {
+                // just an identity, it seems. Not sure. See Z15796
+                Ok(Self::String(value.to_string()))
+            }
+            Self::IdMap(map) => {
+                let mut result = Vec::new();
+                result.push(well_typed_pair.clone());
+
+                // typed pair are represented with Z1K1, K1 and K2
+                for (k, v) in map {
+                    result.push(Self::IdMap({
+                        let mut map = BTreeMap::new();
+                        map.insert(zid!(1, 1), well_typed_pair.clone());
+                        map.insert(
+                            Zid::from_u64s_panic(None, Some(1)),
+                            Self::IdMap({
+                                let mut map = BTreeMap::new();
+                                map.insert(zid!(1, 1), Self::String("Z39".to_string()));
+                                map.insert(zid!(39, 1), Self::String(k.to_string()));
+                                map
+                            }),
+                        );
+                        map.insert(
+                            Zid::from_u64s_panic(None, Some(2)),
+                            v.reify(runner)
+                                .map_err(|e| e.trace(format!("inside {}", k)))?,
+                        );
+                        map
+                    }));
+                }
+
+                Ok(Self::Array(result))
+            }
+            Self::Array(array) => {
+                // let’s have fun transforming that to linked list...
+                todo!("manage list");
+            }
         }
     }
 }

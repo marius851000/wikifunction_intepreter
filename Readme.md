@@ -6,4 +6,6 @@ It can run a few function, but lacks a few clarification about references as wel
 
 Does not implement running native code for now. Thought I might add it later if I do not abandon or fully rewrite it before. I plan to use the same process and full isolation (using rust interpreters with sandbox turned on the respective interpreter)
 
+Error handling is pretty lackluster, sadly. It could likely be greatly improved, and made great.
+
 Note that this was done with little reference to any doc, mostly limited to [https://www.wikifunctions.org/wiki/Wikifunctions:Function_model](the function model page)

@@ -176,7 +176,7 @@ impl DataEntry {
 
                 Ok(Self::Array(result))
             }
-            Self::Array(array) => {
+            Self::Array(_array) => {
                 // let’s have fun transforming that to linked list...
                 todo!("manage list");
             }

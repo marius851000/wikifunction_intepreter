@@ -8,7 +8,7 @@ use crate::{
     evaluation_error::Provenance,
     parse_tool::{
         WfFunction, WfFunctionCall, WfImplementation, WfParse, WfPersistentObject, WfTestCase,
-        WfUntyped, parse_boolean,
+        WfType, WfUntyped, parse_boolean,
     },
     recurse_and_replace_placeholder,
 };
@@ -58,6 +58,20 @@ impl Runner {
             .get_persistent_object::<WfUntyped>(&zid!(42))?
             .value
             .entry)
+    }
+
+    pub fn get_object_type<'l>(
+        &'l self,
+        data: &'l DataEntry,
+    ) -> Result<WfType<'l>, EvaluationError> {
+        let zid = Zid::from_zid(
+            data.get_map_entry(&zid!(1, 1))
+                .map_err(|e| e.trace_str("getting the type"))?
+                .get_str()
+                .map_err(|e| e.trace_str("getting the zid"))?,
+        )
+        .map_err(EvaluationError::ParseZID)?;
+        Ok(self.get_persistent_object(&zid)?.value)
     }
 
     pub fn get_bool(&self, b: bool) -> Result<&DataEntry, EvaluationError> {

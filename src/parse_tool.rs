@@ -11,6 +11,14 @@ pub fn parse_string_type(entry: &DataEntry) -> Result<&str, EvaluationError> {
     Ok(entry.get_map_entry(&zid!(6, 1))?.get_str()?)
 }
 
+pub fn parse_string_permissive(entry: &DataEntry) -> Result<&str, EvaluationError> {
+    if let Ok(v) = entry.get_str() {
+        return Ok(v);
+    } else {
+        return parse_string_type(entry);
+    }
+}
+
 pub fn raw_string_to_object_string(input: String) -> DataEntry {
     DataEntry::IdMap({
         let mut map = BTreeMap::new();
@@ -275,5 +283,74 @@ impl<'l> WfParse<'l> for WfFunctionCall<'l> {
             args.insert(k.clone(), v);
         }
         Ok(Self { function, args })
+    }
+}
+
+/// A Z4
+#[derive(Debug, Clone)]
+pub struct WfType<'l> {
+    pub identity: PotentialReference<'l, WfType<'l>>,
+    pub keys: PotentialReference<'l, WfUntyped<'l>>, //TODO: typed list
+    pub validator: PotentialReference<'l, WfFunction<'l>>,
+    pub equality: PotentialReference<'l, WfFunction<'l>>,
+    pub display_function: PotentialReference<'l, WfFunction<'l>>,
+    pub reading_function: PotentialReference<'l, WfFunction<'l>>,
+    pub type_converters_to_code: PotentialReference<'l, WfUntyped<'l>>,
+    pub type_converters_from_code: PotentialReference<'l, WfUntyped<'l>>,
+}
+
+impl<'l> WfParse<'l> for WfType<'l> {
+    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError> {
+        Ok(Self {
+            identity: entry.get_map_potential_reference(&zid!(4, 1))?,
+            keys: entry.get_map_potential_reference(&zid!(4, 2))?,
+            validator: entry.get_map_potential_reference(&zid!(4, 3))?,
+            equality: entry.get_map_potential_reference(&zid!(4, 4))?,
+            display_function: entry.get_map_potential_reference(&zid!(4, 5))?,
+            reading_function: entry.get_map_potential_reference(&zid!(4, 6))?,
+            type_converters_to_code: entry.get_map_potential_reference(&zid!(4, 7))?,
+            type_converters_from_code: entry.get_map_potential_reference(&zid!(4, 8))?,
+        })
+    }
+}
+
+/// meant as a high level representation of a typed list whose type is known in advance
+#[derive(Debug, Clone)]
+pub struct WfTypedList<'l, T: WfParse<'l>> {
+    pub elements: Vec<T>,
+    phantom: PhantomData<WfFunction<'l>>,
+}
+
+impl<'l, T: WfParse<'l>> WfParse<'l> for WfTypedList<'l, T> {
+    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError> {
+        let mut result = Vec::new();
+        for (pos, value) in entry.get_array()?.iter().enumerate() {
+            result
+                .push(T::parse(value).map_err(|e| e.trace(format!("at array position {}", pos)))?);
+        }
+        Ok(Self {
+            elements: result,
+            phantom: PhantomData::default(),
+        })
+    }
+}
+
+/// A Z3
+#[derive(Debug, Clone)]
+pub struct WfKey<'l> {
+    pub value_type: PotentialReference<'l, WfType<'l>>,
+    pub key_id: &'l str,
+    pub label: PotentialReference<'l, WfUntyped<'l>>,
+    pub is_identity: PotentialReference<'l, WfUntyped<'l>>,
+}
+
+impl<'l> WfParse<'l> for WfKey<'l> {
+    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError> {
+        Ok(Self {
+            value_type: entry.get_map_potential_reference(&zid!(3, 1))?,
+            key_id: parse_string_permissive(entry.get_map_entry(&zid!(3, 2))?)?,
+            label: entry.get_map_potential_reference(&zid!(3, 3))?,
+            is_identity: entry.get_map_potential_reference(&zid!(3, 4))?,
+        })
     }
 }

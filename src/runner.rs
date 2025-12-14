@@ -4,10 +4,13 @@ use std::{
 };
 
 use crate::{
-    DataEntry, EvaluationErrorKind, GlobalDatas, Zid,
+    DataEntry, EvaluationError, EvaluationErrorKind, GlobalDatas, Zid,
+    evaluation_error::TraceInfo,
     parse_tool::{
         WfFunction, WfFunctionCall, WfImplementation, WfParse, WfPersistentObject, WfTestCase,
-        WfType, WfUntyped, parse_boolean,
+        WfType, WfUntyped, ZID_FUNCTION_CALL_FUNCTION, ZID_FUNCTION_IDENTITY,
+        ZID_IMPLEMENTATION_FUNCTION, ZID_PERSISTENT_OBJECT_VALUE, ZID_TEST_CASE_CALL,
+        ZID_TEST_CASE_RESULT_VALIDATION, parse_boolean,
     },
     recurse_and_replace_placeholder,
 };
@@ -81,12 +84,17 @@ impl Runner {
         &self,
         test_case_persistent: &WfPersistentObject<'l, WfTestCase<'l>>,
         implementation_persistent: &WfPersistentObject<'l, WfImplementation<'l>>,
-    ) -> Result<(), EvaluationErrorKind> {
-        let function_identifier = implementation_persistent
-            .value
-            .function
-            .get_reference()
-            .unwrap(); //TODO: get rid of unwrap
+    ) -> Result<(), EvaluationError> {
+        let function_identifier = EvaluationError::run_with_frame_fun_multiple(
+            || {
+                vec![
+                    TraceInfo::InsideInput("implementation".to_string()),
+                    TraceInfo::InsideMap(ZID_PERSISTENT_OBJECT_VALUE),
+                    TraceInfo::InsideMap(ZID_IMPLEMENTATION_FUNCTION),
+                ]
+            },
+            || Ok(implementation_persistent.value.function.get_reference()?),
+        )?;
 
         let mut runner_option = RunnerOption::default();
         runner_option.force_use_impl = Some({
@@ -95,56 +103,83 @@ impl Runner {
             m
         });
 
-        let function_call = test_case_persistent
-            .value
-            .call
-            .evaluate(&self)
-            .map_err(|e| e.trace("on test_case->call".to_string()))?;
+        let test_fn_result = EvaluationError::run_with_frame_fun_multiple(
+            || {
+                vec![
+                    TraceInfo::InsideInput("test case".to_string()),
+                    TraceInfo::InsideMap(ZID_PERSISTENT_OBJECT_VALUE),
+                    TraceInfo::InsideMap(ZID_TEST_CASE_CALL),
+                ]
+            },
+            || {
+                let function_call = test_case_persistent.value.call.evaluate(&self)?;
+                Ok(self.run_function_call(&function_call, &runner_option)?)
+            },
+        )?;
 
-        let test_fn_result = self
-            .run_function_call(&function_call, &runner_option)
-            .map_err(|e| e.trace("running function to test".to_string()))?;
+        EvaluationError::run_with_frame_fun_multiple(
+            || {
+                vec![
+                    TraceInfo::ProcessingResult(test_fn_result.clone()),
+                    TraceInfo::InsideInput("test case".to_string()),
+                ]
+            },
+            || {
+                let test_result = EvaluationError::run_with_frame_fun_multiple(
+                    || {
+                        vec![
+                            TraceInfo::InsideMap(ZID_PERSISTENT_OBJECT_VALUE),
+                            TraceInfo::InsideMap(ZID_TEST_CASE_RESULT_VALIDATION),
+                        ]
+                    },
+                    || {
+                        let validator: WfFunctionCall<'_> = test_case_persistent
+                            .value
+                            .result_validation
+                            .evaluate(&self)?;
 
-        (|| {
-            let validator = test_case_persistent
-                .value
-                .result_validation
-                .evaluate(&self)
-                .map_err(|e| e.trace("getting the test validator".to_string()))?;
+                        // validator is a function call. replace first parameter with the result
 
-            // validator is a function call. replace first parameter with the result
+                        let validator_function_id = EvaluationError::run_with_frame(
+                            TraceInfo::InsideMap(ZID_FUNCTION_CALL_FUNCTION),
+                            || {
+                                let validator_function = validator.function.evaluate(&self)?;
 
-            let validator_function_id = validator
-                .function
-                .evaluate(&self)
-                .map_err(|e| e.trace_str("getting the validator function"))?
-                .identity
-                .get_reference()
-                .map_err(|e| e.trace_str("getting the validator function identity"))?;
+                                EvaluationError::run_with_frame(
+                                    TraceInfo::InsideMap(ZID_FUNCTION_IDENTITY),
+                                    || Ok(validator_function.identity.get_reference()?),
+                                )
+                            },
+                        )?;
 
-            let inserted_validation_ref =
-                Zid::from_u64s_panic(validator_function_id.get_z().map(|x| x.into()), Some(1));
+                        // should not panic
+                        let inserted_validation_ref = Zid::from_u64s_panic(
+                            validator_function_id.get_z().map(|x| x.into()),
+                            Some(1),
+                        );
 
-            let mut validator_modified = validator.clone();
+                        let mut validator_modified = validator.clone();
 
-            validator_modified
-                .args
-                .insert(inserted_validation_ref, &test_fn_result);
+                        validator_modified
+                            .args
+                            .insert(inserted_validation_ref, &test_fn_result);
 
-            let validator_result = self
-                .run_function_call(&validator_modified, &RunnerOption::default())
-                .map_err(|e| e.trace_str("running the validator function"))?;
+                        let validator_result = self
+                            .run_function_call(&validator_modified, &RunnerOption::default())
+                            .map_err(|e| e.trace_str("running the validator function"))?;
 
-            let test_result = parse_boolean(&validator_result)
-                .map_err(|e| e.trace_str("parsing the validator result boolean"))?;
+                        Ok(parse_boolean(&validator_result)
+                            .map_err(|e| e.trace_str("parsing the validator result boolean"))?)
+                    },
+                )?;
 
-            if !test_result {
-                return Err(EvaluationErrorKind::TestSuiteFailed(test_fn_result.clone()));
-            }
+                if !test_result {
+                    Err(EvaluationErrorKind::TestSuiteFailed(test_fn_result.clone()))?;
+                }
 
-            Ok(())
-        })()
-        .map_err(|e| EvaluationErrorKind::TestResultInfo(test_fn_result, Box::new(e)))
+                Ok(())
+            },
+        )
     }
 
     pub fn get_preferred_implementation<'l>(

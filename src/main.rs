@@ -1,5 +1,6 @@
 use std::{fs::File, io::BufReader, sync::Arc};
 
+use anyhow::Context;
 use wikifunctions_interpreter::{GlobalDatas, Runner, RunnerOption, Zid, parse_tool::WfTestCase};
 
 fn main() -> anyhow::Result<()> {
@@ -34,7 +35,7 @@ fn main() -> anyhow::Result<()> {
             .unwrap();
         runner
             .run_test_case(&test_case_persistent, &implementation_persistant)
-            .map_err(|e| e.trace(format!("running the test case {}", test_to_run)))?;
+            .with_context(|| format!("running the test case {}", test_to_run))?;
     }
 
     Ok(())

@@ -168,6 +168,8 @@ impl<'l> WfParse<'l> for WfUntyped<'l> {
     }
 }
 
+pub const ZID_PERSISTENT_OBJECT_VALUE: Zid = zid!(2, 2);
+
 /// a Z2
 #[derive(Clone, Debug)]
 pub struct WfPersistentObject<'l, T: WfParse<'l>> {
@@ -190,7 +192,7 @@ impl<'l, T: WfParse<'l>> WfParse<'l> for WfPersistentObject<'l, T> {
             //TODO: Make Reference::from_zid directly return an EvaluationError
             .map_err(EvaluationErrorKind::ParseZID)
             .map_err(|e| e.trace_str("parsing id"))?,
-            value: T::parse(entry.get_map_entry(&zid!(2, 2))?)
+            value: T::parse(entry.get_map_entry(&ZID_PERSISTENT_OBJECT_VALUE)?)
                 .map_err(|e| e.trace_str("parsing value"))?,
             labels: entry.get_map_potential_reference(&zid!(2, 3))?,
             aliases: entry.get_map_potential_reference(&zid!(2, 4))?,
@@ -198,6 +200,8 @@ impl<'l, T: WfParse<'l>> WfParse<'l> for WfPersistentObject<'l, T> {
         })
     }
 }
+
+pub const ZID_IMPLEMENTATION_FUNCTION: Zid = zid!(14, 1);
 
 /// A Z14
 #[derive(Clone, Debug)]
@@ -219,6 +223,8 @@ impl<'l> WfParse<'l> for WfImplementation<'l> {
     }
 }
 
+pub const ZID_FUNCTION_IDENTITY: Zid = zid!(8, 5);
+
 /// A Z8
 #[derive(Clone, Debug)]
 pub struct WfFunction<'l> {
@@ -236,12 +242,14 @@ impl<'l> WfParse<'l> for WfFunction<'l> {
             return_type: entry.get_map_potential_reference(&zid!(8, 2))?,
             testers: entry.get_map_potential_reference(&zid!(8, 3))?,
             implementations: entry.get_map_potential_reference(&zid!(8, 4))?,
-            identity: entry.get_map_potential_reference(&zid!(8, 5))?,
+            identity: entry.get_map_potential_reference(&ZID_FUNCTION_IDENTITY)?,
         })
     }
 }
 
 /// A Z20
+pub const ZID_TEST_CASE_CALL: Zid = zid!(20, 2);
+pub const ZID_TEST_CASE_RESULT_VALIDATION: Zid = zid!(20, 3);
 #[derive(Clone, Debug)]
 pub struct WfTestCase<'l> {
     pub function: PotentialReference<'l, WfFunction<'l>>,
@@ -253,12 +261,14 @@ impl<'l> WfParse<'l> for WfTestCase<'l> {
     fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationErrorKind> {
         Ok(Self {
             function: entry.get_map_potential_reference(&zid!(20, 1))?,
-            call: entry.get_map_potential_reference(&zid!(20, 2))?,
-            result_validation: entry.get_map_potential_reference(&zid!(20, 3))?,
+            call: entry.get_map_potential_reference(&ZID_TEST_CASE_CALL)?,
+            result_validation: entry
+                .get_map_potential_reference(&ZID_TEST_CASE_RESULT_VALIDATION)?,
         })
     }
 }
 
+pub const ZID_FUNCTION_CALL_FUNCTION: Zid = zid!(7, 1);
 /// A Z7
 #[derive(Debug, Clone)]
 pub struct WfFunctionCall<'l> {
@@ -276,7 +286,7 @@ impl<'l> WfFunctionCall<'l> {
 }
 impl<'l> WfParse<'l> for WfFunctionCall<'l> {
     fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationErrorKind> {
-        let function = entry.get_map_potential_reference(&zid!(7, 1))?;
+        let function = entry.get_map_potential_reference(&ZID_FUNCTION_CALL_FUNCTION)?;
         let mut args = BTreeMap::new();
         for (k, v) in entry.get_map()? {
             if k == &zid!(1, 1) || k == &zid!(7, 1) {

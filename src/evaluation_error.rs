@@ -19,6 +19,8 @@ pub enum EvaluationError {
     TestSuiteFailed(DataEntry),
     #[error("low level: unimplemented {0}")]
     Unimplemented(String),
+    #[error("low level: wrong type {0}, expected {1}")]
+    WrongType(Reference, Reference),
     #[error("info: test result: {0:?}")]
     TestResultInfo(DataEntry, #[source] Box<EvaluationError>),
     #[error("info: trace: {0}")]

@@ -160,18 +160,14 @@ impl<'de> Deserialize<'de> for Reference {
 }
 
 macro_rules! zid {
-    ($z:expr) => {
-        {
-            const ZID: Reference = crate::Reference::from_u64s_panic(Some($z), None);
-            ZID
-        }
-    };
-    ($z:expr, $k:expr) => {
-        {
-            const ZID: Reference = crate::Reference::from_u64s_panic(Some($z), Some($k));
-            ZID
-        }
-    }
+    ($z:expr) => {{
+        const ZID: Reference = crate::Reference::from_u64s_panic(Some($z), None);
+        ZID
+    }};
+    ($z:expr, $k:expr) => {{
+        const ZID: Reference = crate::Reference::from_u64s_panic(Some($z), Some($k));
+        ZID
+    }};
 }
 
 #[cfg(test)]
@@ -180,14 +176,8 @@ mod tests {
 
     #[test]
     fn test_from_zid() {
-        assert_eq!(
-            Reference::from_zid("Z156").unwrap(),
-            zid!(156)
-        );
-        assert_eq!(
-            Reference::from_zid("Z30K4").unwrap(),
-            zid!(30, 4),
-        );
+        assert_eq!(Reference::from_zid("Z156").unwrap(), zid!(156));
+        assert_eq!(Reference::from_zid("Z30K4").unwrap(), zid!(30, 4),);
         assert_eq!(
             Reference::from_zid("K1").unwrap(),
             Reference(None, Some(NonZeroU64::new(1)).unwrap())
@@ -204,14 +194,8 @@ mod tests {
 
     #[test]
     fn test_to_zid() {
-        assert_eq!(
-            zid!(156).to_zid(),
-            "Z156"
-        );
-        assert_eq!(
-            zid!(30, 4).to_zid(),
-            "Z30K4"
-        );
+        assert_eq!(zid!(156).to_zid(), "Z156");
+        assert_eq!(zid!(30, 4).to_zid(), "Z30K4");
     }
 
     #[test]
@@ -230,14 +214,7 @@ mod tests {
 
     #[test]
     fn test_proc_macro() {
-        assert_eq!(
-            zid!(6),
-            Reference::from_u64s(Some(6), None).unwrap()
-        );
-        assert_eq!(
-            zid!(6, 2),
-            Reference::from_u64s(Some(6), Some(2)).unwrap()
-        )
-
+        assert_eq!(zid!(6), Reference::from_u64s(Some(6), None).unwrap());
+        assert_eq!(zid!(6, 2), Reference::from_u64s(Some(6), Some(2)).unwrap())
     }
 }

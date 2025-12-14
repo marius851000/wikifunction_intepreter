@@ -4,6 +4,11 @@ pub fn parse_zid_string(entry: &DataEntry) -> Result<Reference, EvaluationError>
     Ok(Reference::from_zid(entry.get_str()?).map_err(|e| EvaluationError::ParseZID(e))?)
 }
 
+pub fn parse_string_type(entry: &DataEntry) -> Result<&str, EvaluationError> {
+    check_type(entry, zid!(6))?;
+    Ok(entry.get_map_entry(&zid!(6, 1))?.get_str()?)
+}
+
 pub fn parse_boolean(entry: &DataEntry) -> Result<bool, EvaluationError> {
     let text = entry.get_map_entry(&zid!(40, 1))?.get_str()?;
 
@@ -14,15 +19,41 @@ pub fn parse_boolean(entry: &DataEntry) -> Result<bool, EvaluationError> {
     }
 }
 
-pub fn get_persistant_object_value(entry: &DataEntry) -> Result<&DataEntry, EvaluationError> {
-    Ok(entry.get_map_entry(&zid!(2, 2))?)
+/// Return an error if type does not match
+pub fn check_type(entry: &DataEntry, id: Reference) -> Result<(), EvaluationError> {
+    let read_type = parse_zid_string(entry.get_map_entry(&zid!(1, 1))?)
+        .map_err(|e| e.trace_str("parsing the type zid"))?;
+    if read_type != id {
+        return Err(EvaluationError::WrongType(read_type, id));
+    } else {
+        return Ok(());
+    }
 }
 
-pub fn get_persistant_object_id(entry: &DataEntry) -> Result<Reference, EvaluationError> {
-    let zid_entry = entry
-        .get_map_entry(&zid!(2, 1))?
-        .get_map_entry(&zid!(6, 1))
-        .map_err(|e| e.trace("Inside Z2K1".to_string()))?;
+#[derive(Clone)]
+pub struct WfPersistentObject<'l> {
+    pub id: Reference,
+    pub value: &'l DataEntry,
+    pub labels: &'l DataEntry,
+    pub aliases: &'l DataEntry,
+    pub short_description: &'l DataEntry,
+}
 
-    parse_zid_string(zid_entry).map_err(|e| e.trace("Inside K2K1->Z6K1".to_string()))
+impl<'l> WfPersistentObject<'l> {
+    pub fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError> {
+        check_type(&entry, zid!(2))?;
+        Ok(Self {
+            id: Reference::from_zid(
+                parse_string_type(entry.get_map_entry(&zid!(2, 1))?)
+                    .map_err(|e| e.trace_str("parsing id"))?,
+            )
+            //TODO: Make Reference::from_zid directly return an EvaluationError
+            .map_err(EvaluationError::ParseZID)
+            .map_err(|e| e.trace_str("parsing id"))?,
+            value: entry.get_map_entry(&zid!(2, 2))?,
+            labels: entry.get_map_entry(&zid!(2, 3))?,
+            aliases: entry.get_map_entry(&zid!(2, 4))?,
+            short_description: entry.get_map_entry(&zid!(2, 5))?,
+        })
+    }
 }

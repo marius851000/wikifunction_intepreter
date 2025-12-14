@@ -1,7 +1,8 @@
 mod dataentry;
 pub use dataentry::DataEntry;
 
-#[macro_use] mod reference;
+#[macro_use]
+mod reference;
 pub use reference::Reference;
 
 mod globaldatas;

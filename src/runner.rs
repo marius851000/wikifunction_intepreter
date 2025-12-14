@@ -6,7 +6,7 @@ use std::{
 use crate::{
     DataEntry, EvaluationError, GlobalDatas, Reference,
     evaluation_error::Provenance,
-    parse_tool::{WfPersistentObject, parse_boolean, parse_zid_string},
+    parse_tool::{WfParse, WfPersistentObject, parse_boolean, parse_zid_string},
     recurse_and_replace_placeholder,
 };
 

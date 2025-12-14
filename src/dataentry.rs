@@ -1,6 +1,9 @@
 use serde::{Deserialize, de::Visitor};
 
-use crate::{EvaluationError, Reference};
+use crate::{
+    EvaluationError, Reference,
+    parse_tool::{PotentialReference, WfParse},
+};
 use std::collections::BTreeMap;
 
 #[derive(Default)]
@@ -72,6 +75,13 @@ impl DataEntry {
             Some(v) => Ok(v),
             None => Err(EvaluationError::MissingKey(reference.clone())),
         }
+    }
+
+    pub fn get_map_potential_reference<'l, T: WfParse<'l>>(
+        &'l self,
+        reference: &'l Reference,
+    ) -> Result<PotentialReference<'l, T>, EvaluationError> {
+        Ok(PotentialReference::parse(self.get_map_entry(reference)?)?)
     }
 
     pub fn get_map(&self) -> Result<&BTreeMap<Reference, DataEntry>, EvaluationError> {

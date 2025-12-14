@@ -7,6 +7,7 @@ use anyhow::{Context, bail};
 use serde::{Deserialize, de::Visitor};
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+//TODO: rename
 /// At least one of the value is Some
 pub struct Reference(Option<NonZeroU64>, Option<NonZeroU64>);
 

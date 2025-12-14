@@ -48,11 +48,11 @@ impl Runner {
     }
 
     pub fn get_true(&self) -> Result<&DataEntry, EvaluationError> {
-        self.get_value_for_reference(&Reference::from_u64s_panic(Some(41), None))
+        self.get_value_for_reference(&zid!(41))
     }
 
     pub fn get_false(&self) -> Result<&DataEntry, EvaluationError> {
-        self.get_value_for_reference(&Reference::from_u64s_panic(Some(42), None))
+        self.get_value_for_reference(&zid!(42))
     }
 
     pub fn get_bool(&self, b: bool) -> Result<&DataEntry, EvaluationError> {
@@ -65,16 +65,13 @@ impl Runner {
         test_case_persistant: &DataEntry,
         implementation_persistant: &DataEntry,
     ) -> Result<(), EvaluationError> {
-        const Z14K1: Reference = Reference::from_u64s_panic(Some(14), Some(1)); // implementation->function
-        const Z2K2: Reference = Reference::from_u64s_panic(Some(2), Some(2)); // persistent object->value
-
         let implementation_identifier = get_persistant_object_id(implementation_persistant)
             .map_err(|e| e.trace("getting the id of the implementation".to_string()))?;
         let function_identifier = parse_zid_string(
             implementation_persistant
-                .get_map_entry(&Z2K2)
+                .get_map_entry(&zid!(2, 2)) // persistant object->value
                 .map_err(|e| e.trace("on the implementation to be tested".to_string()))?
-                .get_map_entry(&Z14K1)
+                .get_map_entry(&zid!(14, 1)) // implementation->function
                 .map_err(|e| {
                     e.trace("on the implementation to be tested, inside Z2K2".to_string())
                 })?,
@@ -91,18 +88,15 @@ impl Runner {
         let test_case_persistant_id = get_persistant_object_id(test_case_persistant)
             .map_err(|e| e.trace("processing persistant test case".to_string()))?;
 
-        const Z20K2: Reference = Reference::from_u64s_panic(Some(20), Some(2));
-        const Z20K3: Reference = Reference::from_u64s_panic(Some(20), Some(3));
-        const Z7K1: Reference = Reference::from_u64s_panic(Some(7), Some(1));
         let function_call = test_case_persistant
-            .get_map_entry(&Z2K2)
+            .get_map_entry(&zid!(2, 2))
             .map_err(|e| e.trace("on the test case".to_string()))?
-            .get_map_entry(&Z20K2)
+            .get_map_entry(&zid!(20, 2))
             .map_err(|e| e.trace("on the test case, inside Z2K2".to_string()))?;
 
         let test_case_provenance = Provenance::Persistant(test_case_persistant_id);
         let function_call_provenance =
-            Provenance::FromOther(Box::new(test_case_provenance), vec![Z2K2, Z20K2]);
+            Provenance::FromOther(Box::new(test_case_provenance), vec![zid!(2, 2), zid!(20, 2)]);
 
         let test_fn_result = self
             .run_function_call(function_call, &function_call_provenance, &runner_option)
@@ -110,16 +104,16 @@ impl Runner {
 
         (|| {
             let validator = test_case_persistant
-                .get_map_entry(&Z2K2)
+                .get_map_entry(&zid!(2, 2))
                 .map_err(|e| e.trace("on the test case".to_string()))?
-                .get_map_entry(&Z20K3)
+                .get_map_entry(&zid!(20, 3))
                 .map_err(|e| e.trace("on the test case, inside Z2K2".to_string()))?;
 
             // validator is a function call. replace first parameter with the result
 
             let validator_function_id = parse_zid_string(
                 validator
-                    .get_map_entry(&Z7K1)
+                    .get_map_entry(&zid!(7, 1))
                     .map_err(|e| e.trace_str("on the validator"))?,
             )
             .map_err(|e| e.trace_str("on the validator"))?;
@@ -174,15 +168,11 @@ impl Runner {
                     e.trace("loading specifically specified implementation".to_string())
                 })?)
         } else {
-            const Z8K4: Reference = Reference::from_u64s_panic(Some(8), Some(4)); // implementations
-            const Z14K2: Reference = Reference::from_u64s_panic(Some(14), Some(2)); // impl->composition
-            const Z14K4: Reference = Reference::from_u64s_panic(Some(14), Some(4)); // impl->builtins
-
             let function = get_persistant_object_value(function_persistant)
                 .map_err(|e| e.trace("processing persistant function to call".to_string()))?;
 
             let implementations_raw = function
-                .get_map_entry(&Z8K4)
+                .get_map_entry(&zid!(8, 4)) // implementations
                 .map_err(|e| e.trace("getting implementations".to_string()))?;
             let implementations_ref = implementations_raw
                 .get_array()
@@ -213,11 +203,11 @@ impl Runner {
                     .map_err(|e| e.trace("processing an implementation".to_string()))?;
 
                 // check if it have a composition implementation
-                if let Some(_) = implementation_map.get(&Z14K2) {
+                if let Some(_) = implementation_map.get(&zid!(14, 2)) { // composition implementation
                     return Ok(implementation_persistant);
                 }
 
-                if let Some(_) = implementation_map.get(&Z14K4) {
+                if let Some(_) = implementation_map.get(&zid!(14, 4)) { // builtin implementation
                     return Ok(implementation_persistant);
                 }
             }
@@ -282,21 +272,19 @@ impl Runner {
         function_call_provenance: &Provenance,
         option: &RunnerOption,
     ) -> Result<DataEntry, EvaluationError> {
-        const Z14K2: Reference = Reference::from_u64s_panic(Some(14), Some(2));
-        const Z14K4: Reference = Reference::from_u64s_panic(Some(14), Some(4));
 
         let impl_map = implementation.get_map()?;
-        if let Some(composition) = impl_map.get(&Z14K2) {
+        if let Some(composition) = impl_map.get(&zid!(14, 2)) {
             return self.run_composition(
                 composition,
-                &implementation_provenance.to_other(vec![Z14K2]),
+                &implementation_provenance.to_other(vec![zid!(14, 2)]),
                 function_call,
                 function_call_provenance,
                 option,
             );
         };
 
-        if let Some(builtin) = impl_map.get(&Z14K4) {
+        if let Some(builtin) = impl_map.get(&zid!(14, 4)) {
             return self.run_builtin(builtin, function_call, function_call_provenance, option);
         }
 
@@ -391,9 +379,8 @@ impl Runner {
         function_call_provenance: &Provenance,
         option: &RunnerOption,
     ) -> Result<DataEntry, EvaluationError> {
-        const Z6K1: Reference = Reference::from_u64s_panic(Some(6), Some(1));
         let implementation_id = builtin
-            .get_map_entry(&Z6K1)
+            .get_map_entry(&zid!(6, 1))
             .map_err(|e| e.trace("Getting the implementation id to run".to_string()))?
             .get_str()
             .map_err(|e| e.trace("Getting the implementation id to run".to_string()))?;
@@ -428,13 +415,9 @@ impl Runner {
         match implementation_id {
             // If
             "Z902" => {
-                const Z802K1: Reference = Reference::from_u64s_panic(Some(802), Some(1)); // condition
-                const Z802K2: Reference = Reference::from_u64s_panic(Some(802), Some(2)); // then
-                const Z802K3: Reference = Reference::from_u64s_panic(Some(802), Some(3)); // else
-
                 let condition = self
                     .recurse_call_function(
-                        function_call.get_map_entry(&Z802K1)?,
+                        function_call.get_map_entry(&zid!(802, 1))?,
                         &provenance_other,
                         option,
                     )
@@ -442,7 +425,7 @@ impl Runner {
                 let condition =
                     parse_boolean(&condition).map_err(|e| e.trace_str("parsing condition"))?;
 
-                let entry_to_use = if condition { Z802K2 } else { Z802K3 };
+                let entry_to_use = if condition { zid!(802, 2) } else { zid!(802, 3) };
 
                 let result = self
                     .recurse_call_function(
@@ -456,10 +439,8 @@ impl Runner {
             }
             // Is empty (typed) list
             "Z913" => {
-                const Z813K1: Reference = Reference::from_u64s_panic(Some(813), Some(1));
-
                 let list = self.recurse_call_function(
-                    function_call.get_map_entry(&Z813K1)?,
+                    function_call.get_map_entry(&zid!(813, 1))?,
                     &provenance_other,
                     option,
                 )?;
@@ -469,12 +450,9 @@ impl Runner {
             }
             // boolean equality
             "Z944" => {
-                const Z844K1: Reference = Reference::from_u64s_panic(Some(844), Some(1));
-                const Z844K2: Reference = Reference::from_u64s_panic(Some(844), Some(2));
-
                 let boolean1 = self
                     .recurse_call_function(
-                        function_call.get_map_entry(&Z844K1)?,
+                        function_call.get_map_entry(&zid!(844, 1))?,
                         &provenance_other,
                         option,
                     )
@@ -483,7 +461,7 @@ impl Runner {
                     parse_boolean(&boolean1).map_err(|e| e.trace_str("parsing first boolean"))?;
                 let boolean2 = self
                     .recurse_call_function(
-                        function_call.get_map_entry(&Z844K2)?,
+                        function_call.get_map_entry(&zid!(844, 2))?,
                         &provenance_other,
                         option,
                     )

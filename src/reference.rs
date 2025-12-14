@@ -159,6 +159,21 @@ impl<'de> Deserialize<'de> for Reference {
     }
 }
 
+macro_rules! zid {
+    ($z:expr) => {
+        {
+            const ZID: Reference = crate::Reference::from_u64s_panic(Some($z), None);
+            ZID
+        }
+    };
+    ($z:expr, $k:expr) => {
+        {
+            const ZID: Reference = crate::Reference::from_u64s_panic(Some($z), Some($k));
+            ZID
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,11 +182,11 @@ mod tests {
     fn test_from_zid() {
         assert_eq!(
             Reference::from_zid("Z156").unwrap(),
-            Reference::from_u64s(Some(156), None).unwrap()
+            zid!(156)
         );
         assert_eq!(
             Reference::from_zid("Z30K4").unwrap(),
-            Reference::from_u64s(Some(30), Some(4)).unwrap()
+            zid!(30, 4),
         );
         assert_eq!(
             Reference::from_zid("K1").unwrap(),
@@ -190,11 +205,11 @@ mod tests {
     #[test]
     fn test_to_zid() {
         assert_eq!(
-            Reference::from_u64s(Some(156), None).unwrap().to_zid(),
+            zid!(156).to_zid(),
             "Z156"
         );
         assert_eq!(
-            Reference::from_u64s(Some(30), Some(4)).unwrap().to_zid(),
+            zid!(30, 4).to_zid(),
             "Z30K4"
         );
     }
@@ -203,13 +218,26 @@ mod tests {
     fn test_deserialize() {
         assert_eq!(
             serde_json::from_str::<Reference>("\"Z654\"").unwrap(),
-            Reference::from_u64s(Some(654), None).unwrap()
+            zid!(654),
         );
         assert_eq!(
             serde_json::from_str::<Reference>("\"Z30K5\"").unwrap(),
-            Reference::from_u64s(Some(30), Some(5)).unwrap(),
+            zid!(30, 5),
         );
         assert!(serde_json::from_str::<Reference>("654").is_err());
         assert!(serde_json::from_str::<Reference>("Z1a").is_err());
+    }
+
+    #[test]
+    fn test_proc_macro() {
+        assert_eq!(
+            zid!(6),
+            Reference::from_u64s(Some(6), None).unwrap()
+        );
+        assert_eq!(
+            zid!(6, 2),
+            Reference::from_u64s(Some(6), Some(2)).unwrap()
+        )
+
     }
 }

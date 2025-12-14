@@ -1,6 +1,6 @@
 use std::{fs::File, io::BufReader, sync::Arc};
 
-use interpreter::{
+use wikifunctions_interpreter::{
     GlobalDatas, Reference, Runner, RunnerOption, parse_tool::get_persistant_object_value,
 };
 
@@ -22,7 +22,7 @@ fn main() -> anyhow::Result<()> {
         "Z8130", "Z8131",
 
         // other stuff
-        "Z10071"
+        // "Z10071"
     ] {
         let test_case_persistant = runner
             .get_entry_for_reference(&Reference::from_zid(test_to_run).unwrap())

@@ -7,11 +7,10 @@ use anyhow::{Context, bail};
 use serde::{Deserialize, de::Visitor};
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-//TODO: rename
 /// At least one of the value is Some
-pub struct Reference(Option<NonZeroU64>, Option<NonZeroU64>);
+pub struct Zid(Option<NonZeroU64>, Option<NonZeroU64>);
 
-impl Reference {
+impl Zid {
     pub fn get_z(&self) -> Option<NonZeroU64> {
         self.0
     }
@@ -57,7 +56,7 @@ impl Reference {
             bail!("Text contain extra characters")
         }
 
-        Ok(Reference::from_u64s(z, k)?)
+        Ok(Zid::from_u64s(z, k)?)
     }
 
     pub fn from_u64s(z: Option<u64>, k: Option<u64>) -> anyhow::Result<Self> {
@@ -113,13 +112,13 @@ impl Reference {
     }
 }
 
-impl Display for Reference {
+impl Display for Zid {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.to_zid())
     }
 }
 
-impl Debug for Reference {
+impl Debug for Zid {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // That’s probably good. This reference has quite a specific and recogniseable syntax
         f.write_str(&self.to_zid())
@@ -130,7 +129,7 @@ impl Debug for Reference {
 pub(crate) struct ReferenceVisitor {}
 
 impl<'de> Visitor<'de> for ReferenceVisitor {
-    type Value = Reference;
+    type Value = Zid;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         formatter.write_str("a ZID")
@@ -140,7 +139,7 @@ impl<'de> Visitor<'de> for ReferenceVisitor {
     where
         E: serde::de::Error,
     {
-        match Reference::from_zid(t) {
+        match Zid::from_zid(t) {
             Ok(v) => Ok(v),
 
             Err(err) => Err(serde::de::Error::invalid_value(
@@ -151,7 +150,7 @@ impl<'de> Visitor<'de> for ReferenceVisitor {
     }
 }
 
-impl<'de> Deserialize<'de> for Reference {
+impl<'de> Deserialize<'de> for Zid {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
@@ -162,11 +161,11 @@ impl<'de> Deserialize<'de> for Reference {
 
 macro_rules! zid {
     ($z:expr) => {{
-        const ZID: Reference = crate::Reference::from_u64s_panic(Some($z), None);
+        const ZID: Zid = crate::Zid::from_u64s_panic(Some($z), None);
         ZID
     }};
     ($z:expr, $k:expr) => {{
-        const ZID: Reference = crate::Reference::from_u64s_panic(Some($z), Some($k));
+        const ZID: Zid = crate::Zid::from_u64s_panic(Some($z), Some($k));
         ZID
     }};
 }
@@ -177,20 +176,20 @@ mod tests {
 
     #[test]
     fn test_from_zid() {
-        assert_eq!(Reference::from_zid("Z156").unwrap(), zid!(156));
-        assert_eq!(Reference::from_zid("Z30K4").unwrap(), zid!(30, 4),);
+        assert_eq!(Zid::from_zid("Z156").unwrap(), zid!(156));
+        assert_eq!(Zid::from_zid("Z30K4").unwrap(), zid!(30, 4),);
         assert_eq!(
-            Reference::from_zid("K1").unwrap(),
-            Reference(None, Some(NonZeroU64::new(1)).unwrap())
+            Zid::from_zid("K1").unwrap(),
+            Zid(None, Some(NonZeroU64::new(1)).unwrap())
         );
-        assert!(Reference::from_zid("T156").is_err());
-        assert!(Reference::from_zid("Z").is_err());
-        assert!(Reference::from_zid("Z-9").is_err());
-        assert!(Reference::from_zid("Z1a").is_err());
-        assert!(Reference::from_zid("Za1").is_err());
-        assert!(Reference::from_zid("").is_err());
-        assert!(Reference::from_zid("Z30K4Z1").is_err());
-        assert!(Reference::from_zid("Z30K4K1").is_err());
+        assert!(Zid::from_zid("T156").is_err());
+        assert!(Zid::from_zid("Z").is_err());
+        assert!(Zid::from_zid("Z-9").is_err());
+        assert!(Zid::from_zid("Z1a").is_err());
+        assert!(Zid::from_zid("Za1").is_err());
+        assert!(Zid::from_zid("").is_err());
+        assert!(Zid::from_zid("Z30K4Z1").is_err());
+        assert!(Zid::from_zid("Z30K4K1").is_err());
     }
 
     #[test]
@@ -201,21 +200,18 @@ mod tests {
 
     #[test]
     fn test_deserialize() {
+        assert_eq!(serde_json::from_str::<Zid>("\"Z654\"").unwrap(), zid!(654),);
         assert_eq!(
-            serde_json::from_str::<Reference>("\"Z654\"").unwrap(),
-            zid!(654),
-        );
-        assert_eq!(
-            serde_json::from_str::<Reference>("\"Z30K5\"").unwrap(),
+            serde_json::from_str::<Zid>("\"Z30K5\"").unwrap(),
             zid!(30, 5),
         );
-        assert!(serde_json::from_str::<Reference>("654").is_err());
-        assert!(serde_json::from_str::<Reference>("Z1a").is_err());
+        assert!(serde_json::from_str::<Zid>("654").is_err());
+        assert!(serde_json::from_str::<Zid>("Z1a").is_err());
     }
 
     #[test]
     fn test_proc_macro() {
-        assert_eq!(zid!(6), Reference::from_u64s(Some(6), None).unwrap());
-        assert_eq!(zid!(6, 2), Reference::from_u64s(Some(6), Some(2)).unwrap())
+        assert_eq!(zid!(6), Zid::from_u64s(Some(6), None).unwrap());
+        assert_eq!(zid!(6, 2), Zid::from_u64s(Some(6), Some(2)).unwrap())
     }
 }

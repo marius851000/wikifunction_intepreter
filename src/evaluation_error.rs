@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::{DataEntry, Reference};
+use crate::{DataEntry, Zid};
 
 //TODO: error handling should be much better than that. Will do for now.
 #[derive(Error, Debug)]
@@ -12,7 +12,7 @@ pub enum EvaluationError {
     #[error("low level: Not a string")]
     LowLevelNotAString,
     #[error("low level: missing key {0}")]
-    MissingKey(Reference),
+    MissingKey(Zid),
     #[error("low level: parse ZID")]
     ParseZID(#[source] anyhow::Error),
     #[error("low level: validator result not true")]
@@ -20,7 +20,7 @@ pub enum EvaluationError {
     #[error("low level: unimplemented {0}")]
     Unimplemented(String),
     #[error("low level: wrong type {0}, expected {1}")]
-    WrongType(Reference, Reference),
+    WrongType(Zid, Zid),
     #[error("info: test result: {0:?}")]
     TestResultInfo(DataEntry, #[source] Box<EvaluationError>),
     #[error("info: trace: {0}")]
@@ -39,14 +39,14 @@ impl EvaluationError {
 
 #[derive(Debug, Clone)]
 pub enum Provenance {
-    Persistant(Reference),
+    Persistant(Zid),
     //TODO: manage array
-    FromOther(Box<Provenance>, Vec<Reference>),
+    FromOther(Box<Provenance>, Vec<Zid>),
     Runtime,
 }
 
 impl Provenance {
-    pub fn to_other(&self, path: Vec<Reference>) -> Self {
+    pub fn to_other(&self, path: Vec<Zid>) -> Self {
         Self::FromOther(Box::new(self.clone()), path)
     }
 }

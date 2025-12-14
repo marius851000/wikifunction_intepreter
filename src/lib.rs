@@ -2,8 +2,8 @@ mod dataentry;
 pub use dataentry::DataEntry;
 
 #[macro_use]
-mod reference;
-pub use reference::Reference;
+mod zid;
+pub use zid::Zid;
 
 mod globaldatas;
 pub use globaldatas::GlobalDatas;

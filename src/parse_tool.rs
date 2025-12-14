@@ -1,9 +1,9 @@
 use std::{fmt::Debug, marker::PhantomData};
 
-use crate::{DataEntry, EvaluationError, Reference, Runner};
+use crate::{DataEntry, EvaluationError, Runner, Zid};
 
-pub fn parse_zid_string(entry: &DataEntry) -> Result<Reference, EvaluationError> {
-    Ok(Reference::from_zid(entry.get_str()?).map_err(|e| EvaluationError::ParseZID(e))?)
+pub fn parse_zid_string(entry: &DataEntry) -> Result<Zid, EvaluationError> {
+    Ok(Zid::from_zid(entry.get_str()?).map_err(|e| EvaluationError::ParseZID(e))?)
 }
 
 pub fn parse_string_type(entry: &DataEntry) -> Result<&str, EvaluationError> {
@@ -22,7 +22,7 @@ pub fn parse_boolean(entry: &DataEntry) -> Result<bool, EvaluationError> {
 }
 
 /// Return an error if type does not match
-pub fn check_type(entry: &DataEntry, id: Reference) -> Result<(), EvaluationError> {
+pub fn check_type(entry: &DataEntry, id: Zid) -> Result<(), EvaluationError> {
     let read_type = parse_zid_string(entry.get_map_entry(&zid!(1, 1))?)
         .map_err(|e| e.trace_str("parsing the type zid"))?;
     if read_type != id {
@@ -50,12 +50,12 @@ impl<'l, T: WfParse<'l>> PotentialReference<'l, T> {
             DataEntry::String(entry) => {
                 runner
                     .get_persistent_object(
-                        &Reference::from_zid(entry).map_err(EvaluationError::ParseZID)?,
+                        &Zid::from_zid(entry).map_err(EvaluationError::ParseZID)?,
                     )?
                     .value
             }
             DataEntry::IdMap(entry) => {
-                if Reference::from_zid(
+                if Zid::from_zid(
                     entry
                         .get(&zid!(1, 1))
                         .ok_or_else(|| EvaluationError::MissingKey(zid!(1, 1)))?
@@ -64,7 +64,7 @@ impl<'l, T: WfParse<'l>> PotentialReference<'l, T> {
                 .map_err(EvaluationError::ParseZID)?
                     == zid!(9)
                 {
-                    let reference_to = Reference::from_zid(
+                    let reference_to = Zid::from_zid(
                         entry
                             .get(&zid!(9, 1))
                             .ok_or_else(|| EvaluationError::MissingKey(zid!(9, 1)))?
@@ -106,7 +106,7 @@ impl<'l> WfParse<'l> for WpUntyped<'l> {
 #[derive(Clone, Debug)]
 pub struct WfPersistentObject<'l> {
     // assume both id and value are not Z9/reference
-    pub id: Reference,
+    pub id: Zid,
     pub value: &'l DataEntry,
     pub labels: PotentialReference<'l, WpUntyped<'l>>,
     pub aliases: PotentialReference<'l, WpUntyped<'l>>,
@@ -117,7 +117,7 @@ impl<'l> WfParse<'l> for WfPersistentObject<'l> {
     fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError> {
         check_type(&entry, zid!(2))?;
         Ok(Self {
-            id: Reference::from_zid(
+            id: Zid::from_zid(
                 parse_string_type(entry.get_map_entry(&zid!(2, 1))?)
                     .map_err(|e| e.trace_str("parsing id"))?,
             )

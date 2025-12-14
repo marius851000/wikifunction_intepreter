@@ -1,6 +1,6 @@
 use std::{fs::File, io::BufReader, sync::Arc};
 
-use wikifunctions_interpreter::{GlobalDatas, Reference, Runner, RunnerOption};
+use wikifunctions_interpreter::{GlobalDatas, Runner, RunnerOption, Zid};
 
 fn main() -> anyhow::Result<()> {
     let file =
@@ -22,16 +22,16 @@ fn main() -> anyhow::Result<()> {
         // "Z10071"
     ] {
         let test_case_persistant = runner
-            .get_persistent_object(&Reference::from_zid(test_to_run).unwrap())
+            .get_persistent_object(&Zid::from_zid(test_to_run).unwrap())
             .unwrap();
         let function_id_string = test_case_persistant
             .value
-            .get_map_entry(&Reference::from_u64s_panic(Some(20), Some(1)))
+            .get_map_entry(&Zid::from_u64s_panic(Some(20), Some(1)))
             .unwrap()
             .get_str()
             .unwrap();
         let function_persistant = runner
-            .get_persistent_object(&Reference::from_zid(function_id_string).unwrap())
+            .get_persistent_object(&Zid::from_zid(function_id_string).unwrap())
             .unwrap();
         let implementation_persistant = runner
             .get_preferred_implementation(function_persistant, &RunnerOption::default())

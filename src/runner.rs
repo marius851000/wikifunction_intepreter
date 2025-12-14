@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    DataEntry, EvaluationError, GlobalDatas, Reference,
+    DataEntry, EvaluationError, GlobalDatas, Zid,
     evaluation_error::Provenance,
     parse_tool::{WfParse, WfPersistentObject, parse_boolean, parse_zid_string},
     recurse_and_replace_placeholder,
@@ -12,7 +12,7 @@ use crate::{
 
 #[derive(Default, Debug)]
 pub struct RunnerOption {
-    pub force_use_impl: Option<HashMap<Reference, Reference>>,
+    pub force_use_impl: Option<HashMap<Zid, Zid>>,
 }
 
 pub struct Runner {
@@ -25,10 +25,7 @@ impl Runner {
     }
 
     //TODO: check that it isn’t used outside of get_persistent_object
-    fn get_entry_for_reference(
-        &self,
-        reference: &Reference,
-    ) -> Result<&DataEntry, EvaluationError> {
+    fn get_entry_for_reference(&self, reference: &Zid) -> Result<&DataEntry, EvaluationError> {
         self.datas
             .get(reference)
             .map_or(Err(EvaluationError::MissingKey(reference.clone())), |v| {
@@ -38,7 +35,7 @@ impl Runner {
 
     pub fn get_persistent_object(
         &self,
-        reference: &Reference,
+        reference: &Zid,
     ) -> Result<WfPersistentObject<'_>, EvaluationError> {
         Ok(
             WfPersistentObject::parse(self.get_entry_for_reference(reference)?)
@@ -109,10 +106,8 @@ impl Runner {
             )
             .map_err(|e| e.trace_str("on the validator"))?;
 
-            let inserted_validation_ref = Reference::from_u64s_panic(
-                validator_function_id.get_z().map(|x| x.into()),
-                Some(1),
-            );
+            let inserted_validation_ref =
+                Zid::from_u64s_panic(validator_function_id.get_z().map(|x| x.into()), Some(1));
 
             let mut validator_modified = validator.clone();
             match &mut validator_modified {
@@ -169,7 +164,7 @@ impl Runner {
             // TODO: better handling of typed array
             // TODO: prioritize composition, then built-in, then finally code
             for implementation_key_text in implementations_ref.iter().skip(1) {
-                let implementation_key = Reference::from_zid(
+                let implementation_key = Zid::from_zid(
                     implementation_key_text
                         .get_str()
                         .map_err(|e| e.trace("Parsing implementation list".to_string()))?,
@@ -214,7 +209,7 @@ impl Runner {
         function_call_provenance: &Provenance,
         option: &RunnerOption,
     ) -> Result<DataEntry, EvaluationError> {
-        const Z7K1: Reference = Reference::from_u64s_panic(Some(7), Some(1));
+        const Z7K1: Zid = Zid::from_u64s_panic(Some(7), Some(1));
         let function_id = parse_zid_string(
             function_call
                 .get_map_entry(&Z7K1)
@@ -313,7 +308,7 @@ impl Runner {
         provenance: &Provenance,
         option: &RunnerOption,
     ) -> Result<DataEntry, EvaluationError> {
-        const Z1K1: Reference = Reference::from_u64s_panic(Some(1), Some(1));
+        const Z1K1: Zid = Zid::from_u64s_panic(Some(1), Some(1));
 
         match entry {
             DataEntry::IdMap(map) => {
@@ -368,9 +363,9 @@ impl Runner {
         // let’s force the use of composition implementation as much as posible to reduce the built-ins that needs to be implemented
         let impl_to_use = match implementation_id {
             // string equality
-            "Z966" => Some(Reference::from_u64s_panic(Some(17569), None)),
+            "Z966" => Some(Zid::from_u64s_panic(Some(17569), None)),
             // list equality. Some weird behavior around typed list. Might be a problem in certain cases.
-            "Z989" => Some(Reference::from_u64s_panic(Some(15872), None)),
+            "Z989" => Some(Zid::from_u64s_panic(Some(15872), None)),
             _ => None,
         };
 

@@ -1,7 +1,7 @@
 use serde::{Deserialize, de::Visitor};
 
 use crate::{
-    EvaluationError, Reference,
+    EvaluationError, Zid,
     parse_tool::{PotentialReference, WfParse},
 };
 use std::collections::BTreeMap;
@@ -41,9 +41,9 @@ impl<'de> Visitor<'de> for DataEntryVisitor {
     where
         A: serde::de::MapAccess<'de>,
     {
-        let mut result: BTreeMap<Reference, DataEntry> = BTreeMap::new();
+        let mut result: BTreeMap<Zid, DataEntry> = BTreeMap::new();
 
-        while let Some(entry) = map.next_entry::<Reference, DataEntry>()? {
+        while let Some(entry) = map.next_entry::<Zid, DataEntry>()? {
             result.insert(entry.0, entry.1);
         }
 
@@ -65,12 +65,12 @@ impl<'de> Visitor<'de> for DataEntryVisitor {
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataEntry {
     String(String),
-    IdMap(BTreeMap<Reference, DataEntry>),
+    IdMap(BTreeMap<Zid, DataEntry>),
     Array(Vec<DataEntry>),
 }
 
 impl DataEntry {
-    pub fn get_map_entry(&self, reference: &Reference) -> Result<&DataEntry, EvaluationError> {
+    pub fn get_map_entry(&self, reference: &Zid) -> Result<&DataEntry, EvaluationError> {
         match self.get_map()?.get(reference) {
             Some(v) => Ok(v),
             None => Err(EvaluationError::MissingKey(reference.clone())),
@@ -79,12 +79,12 @@ impl DataEntry {
 
     pub fn get_map_potential_reference<'l, T: WfParse<'l>>(
         &'l self,
-        reference: &'l Reference,
+        reference: &'l Zid,
     ) -> Result<PotentialReference<'l, T>, EvaluationError> {
         Ok(PotentialReference::parse(self.get_map_entry(reference)?)?)
     }
 
-    pub fn get_map(&self) -> Result<&BTreeMap<Reference, DataEntry>, EvaluationError> {
+    pub fn get_map(&self) -> Result<&BTreeMap<Zid, DataEntry>, EvaluationError> {
         match self {
             Self::IdMap(map) => Ok(map),
             _ => Err(EvaluationError::LowLevelNotAMap),
@@ -119,7 +119,7 @@ impl<'de> Deserialize<'de> for DataEntry {
 mod tests {
     use std::collections::BTreeMap;
 
-    use crate::{DataEntry, Reference};
+    use crate::{DataEntry, Zid};
 
     #[test]
     fn test_deserialize() {
@@ -133,7 +133,7 @@ mod tests {
             DataEntry::IdMap({
                 let mut m = BTreeMap::new();
                 m.insert(
-                    Reference::from_u64s(Some(10), Some(1)).unwrap(),
+                    Zid::from_u64s(Some(10), Some(1)).unwrap(),
                     DataEntry::String("a\nb".to_string()),
                 );
                 m
@@ -151,14 +151,14 @@ mod tests {
             .unwrap(),
             DataEntry::IdMap({
                 let mut m = BTreeMap::new();
-                m.insert(Reference::from_u64s(Some(1), None).unwrap(), {
+                m.insert(Zid::from_u64s(Some(1), None).unwrap(), {
                     let mut m2 = BTreeMap::new();
                     m2.insert(
-                        Reference::from_u64s(Some(2), None).unwrap(),
+                        Zid::from_u64s(Some(2), None).unwrap(),
                         DataEntry::String("Z3".to_string()),
                     );
                     m2.insert(
-                        Reference::from_u64s(Some(4), None).unwrap(),
+                        Zid::from_u64s(Some(4), None).unwrap(),
                         DataEntry::String("Z2".to_string()),
                     );
                     DataEntry::IdMap(m2)

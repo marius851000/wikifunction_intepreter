@@ -5,7 +5,6 @@ use std::{
 
 use crate::{
     DataEntry, EvaluationError, GlobalDatas, Zid,
-    evaluation_error::Provenance,
     parse_tool::{
         WfFunction, WfFunctionCall, WfImplementation, WfParse, WfPersistentObject, WfTestCase,
         WfType, WfUntyped, parse_boolean,
@@ -103,14 +102,8 @@ impl Runner {
             .evaluate(&self)
             .map_err(|e| e.trace("on test_case->call".to_string()))?;
 
-        let test_case_provenance = Provenance::Persistant(test_case_persistent.id);
-        let function_call_provenance = Provenance::FromOther(
-            Box::new(test_case_provenance),
-            vec![zid!(2, 2), zid!(20, 2)],
-        );
-
         let test_fn_result = self
-            .run_function_call(&function_call, &function_call_provenance, &runner_option)
+            .run_function_call(&function_call, &runner_option)
             .map_err(|e| e.trace("running function to test".to_string()))?;
 
         (|| {
@@ -140,11 +133,7 @@ impl Runner {
                 .insert(inserted_validation_ref, &test_fn_result);
 
             let validator_result = self
-                .run_function_call(
-                    &validator_modified,
-                    &Provenance::Runtime,
-                    &RunnerOption::default(),
-                )
+                .run_function_call(&validator_modified, &RunnerOption::default())
                 .map_err(|e| e.trace_str("running the validator function"))?;
 
             let test_result = parse_boolean(&validator_result)
@@ -229,7 +218,6 @@ impl Runner {
     pub fn run_function_call(
         &self,
         function_call: &WfFunctionCall<'_>,
-        function_call_provenance: &Provenance,
         option: &RunnerOption,
     ) -> Result<DataEntry, EvaluationError> {
         let function = function_call
@@ -239,20 +227,12 @@ impl Runner {
 
         let implementation_persistant = self.get_preferred_implementation(&function, option)?;
 
-        let implementation_provenance = Provenance::Persistant(implementation_persistant.id);
-
         return Ok(self
-            .run_implementation(
-                &implementation_persistant.value,
-                &implementation_provenance,
-                &function_call,
-                function_call_provenance,
-                option,
-            )
+            .run_implementation(&implementation_persistant.value, &function_call, option)
             .map_err(|e| {
                 e.trace(format!(
                     "calling implementation {:?}",
-                    implementation_provenance
+                    implementation_persistant.id
                 ))
             })?);
     }
@@ -260,9 +240,7 @@ impl Runner {
     pub fn run_implementation(
         &self,
         implementation: &WfImplementation,
-        implementation_provenance: &Provenance,
         function_call: &WfFunctionCall,
-        function_call_provenance: &Provenance,
         option: &RunnerOption,
     ) -> Result<DataEntry, EvaluationError> {
         if let Some(composition) = implementation.composition.as_ref() {
@@ -271,9 +249,7 @@ impl Runner {
                     .evaluate(&self)
                     .map_err(|e| e.trace_str("getting the composition implementation"))?
                     .entry,
-                &implementation_provenance.to_other(vec![zid!(14, 2)]),
                 function_call,
-                function_call_provenance,
                 option,
             );
         };
@@ -285,7 +261,6 @@ impl Runner {
                     .map_err(|e| e.trace_str("getting the builtin implementation"))?
                     .entry,
                 function_call,
-                function_call_provenance,
                 option,
             );
         }
@@ -296,9 +271,7 @@ impl Runner {
     pub fn run_composition(
         &self,
         composition: &DataEntry,
-        composition_provenance: &Provenance,
         function_call: &WfFunctionCall<'_>,
-        function_call_provenance: &Provenance,
         option: &RunnerOption,
     ) -> Result<DataEntry, EvaluationError> {
         // algorithm:
@@ -308,25 +281,20 @@ impl Runner {
         let composition_with_substitution_done =
             recurse_and_replace_placeholder(composition, &function_call.args)?;
 
+        let function_id = function_call
+            .function
+            .evaluate(&self)?
+            .identity
+            .get_reference()?;
+
         Ok(self
-            .recurse_call_function(
-                &composition_with_substitution_done,
-                composition_provenance,
-                option,
-            )
-            .map_err(|e| {
-                e.trace(format!(
-                    "Calling the composition from {:?}",
-                    function_call_provenance
-                ))
-            })?)
+            .recurse_call_function(&composition_with_substitution_done, option)
+            .map_err(|e| e.trace(format!("Calling the composition from {:?}", function_id)))?)
     }
 
     pub fn recurse_call_function(
         &self,
         entry: &DataEntry,
-        //TODO: make provenance trace all inside stuff. That should make it quite deep.
-        provenance: &Provenance,
         option: &RunnerOption,
     ) -> Result<DataEntry, EvaluationError> {
         const Z1K1: Zid = Zid::from_u64s_panic(Some(1), Some(1));
@@ -342,7 +310,6 @@ impl Runner {
                         return self.run_function_call(
                             &WfFunctionCall::parse(entry)
                                 .map_err(|e| e.trace_str("parsing a function call"))?,
-                            provenance,
                             option,
                         );
                     }
@@ -352,7 +319,7 @@ impl Runner {
                 for (key, value) in map.iter() {
                     new_map.insert(
                         key.to_owned(),
-                        self.recurse_call_function(value, provenance, option)
+                        self.recurse_call_function(value, option)
                             .map_err(|e| e.trace(format!("Inside {}", key)))?,
                     );
                 }
@@ -363,7 +330,7 @@ impl Runner {
 
                 for (pos, entry) in array.iter().enumerate() {
                     new_array.push(
-                        self.recurse_call_function(entry, provenance, option)
+                        self.recurse_call_function(entry, option)
                             .map_err(|e| e.trace(format!("At array position {}", pos)))?,
                     )
                 }
@@ -378,7 +345,6 @@ impl Runner {
         &self,
         builtin: &DataEntry,
         function_call: &WfFunctionCall<'_>,
-        function_call_provenance: &Provenance,
         option: &RunnerOption,
     ) -> Result<DataEntry, EvaluationError> {
         let implementation_id = builtin
@@ -399,28 +365,19 @@ impl Runner {
             let implementation_persistant = self
                 .get_persistent_object(&impl_to_use)
                 .map_err(|e| e.trace("Getting the implementation to run".to_string()))?;
-            let implementation_provenance = Provenance::Persistant(impl_to_use);
 
             return self.run_implementation(
                 &implementation_persistant.value,
-                &implementation_provenance,
                 function_call,
-                function_call_provenance,
                 option,
             );
         }
-
-        let provenance_other = function_call_provenance.to_other(Vec::new());
 
         match implementation_id {
             // If
             "Z902" => {
                 let condition = self
-                    .recurse_call_function(
-                        function_call.get_arg(&zid!(802, 1))?,
-                        &provenance_other,
-                        option,
-                    )
+                    .recurse_call_function(function_call.get_arg(&zid!(802, 1))?, option)
                     .map_err(|e| e.trace_str("parsing condition"))?;
                 let condition =
                     parse_boolean(&condition).map_err(|e| e.trace_str("parsing condition"))?;
@@ -432,11 +389,7 @@ impl Runner {
                 };
 
                 let result = self
-                    .recurse_call_function(
-                        function_call.get_arg(&entry_to_use)?,
-                        &provenance_other,
-                        option,
-                    )
+                    .recurse_call_function(function_call.get_arg(&entry_to_use)?, option)
                     .map_err(|e| e.trace(format!("evaluating result for {:?}", condition)))?;
 
                 return Ok(result);
@@ -450,11 +403,8 @@ impl Runner {
             }
             // Is empty (typed) list
             "Z913" => {
-                let list = self.recurse_call_function(
-                    function_call.get_arg(&zid!(813, 1))?,
-                    &provenance_other,
-                    option,
-                )?;
+                let list =
+                    self.recurse_call_function(function_call.get_arg(&zid!(813, 1))?, option)?;
 
                 // <= 1 cause typed list store the type as the first index
                 return Ok(self.get_bool(list.get_array()?.len() <= 1)?.clone());
@@ -462,20 +412,12 @@ impl Runner {
             // boolean equality
             "Z944" => {
                 let boolean1 = self
-                    .recurse_call_function(
-                        function_call.get_arg(&zid!(844, 1))?,
-                        &provenance_other,
-                        option,
-                    )
+                    .recurse_call_function(function_call.get_arg(&zid!(844, 1))?, option)
                     .map_err(|e| e.trace_str("parsing first boolean"))?;
                 let boolean1 =
                     parse_boolean(&boolean1).map_err(|e| e.trace_str("parsing first boolean"))?;
                 let boolean2 = self
-                    .recurse_call_function(
-                        function_call.get_arg(&zid!(844, 2))?,
-                        &provenance_other,
-                        option,
-                    )
+                    .recurse_call_function(function_call.get_arg(&zid!(844, 2))?, option)
                     .map_err(|e| e.trace_str("parsing second boolean"))?;
                 let boolean2 =
                     parse_boolean(&boolean2).map_err(|e| e.trace_str("parsing first boolean"))?;

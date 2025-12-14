@@ -36,17 +36,3 @@ impl EvaluationError {
         self.trace(message.to_string())
     }
 }
-
-#[derive(Debug, Clone)]
-pub enum Provenance {
-    Persistant(Zid),
-    //TODO: manage array
-    FromOther(Box<Provenance>, Vec<Zid>),
-    Runtime,
-}
-
-impl Provenance {
-    pub fn to_other(&self, path: Vec<Zid>) -> Self {
-        Self::FromOther(Box::new(self.clone()), path)
-    }
-}

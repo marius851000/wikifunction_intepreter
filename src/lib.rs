@@ -12,7 +12,7 @@ mod runner;
 pub use runner::{Runner, RunnerOption};
 
 mod evaluation_error;
-pub use evaluation_error::EvaluationError;
+pub use evaluation_error::{EvaluationError, EvaluationErrorKind};
 
 pub mod parse_tool;
 

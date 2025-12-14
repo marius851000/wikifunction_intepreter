@@ -1,7 +1,7 @@
 use serde::{Deserialize, de::Visitor};
 
 use crate::{
-    EvaluationError, Runner, Zid,
+    EvaluationErrorKind, Runner, Zid,
     parse_tool::{PotentialReference, WfParse},
 };
 use std::collections::BTreeMap;
@@ -70,31 +70,31 @@ pub enum DataEntry {
 }
 
 impl DataEntry {
-    pub fn get_map_entry(&self, reference: &Zid) -> Result<&DataEntry, EvaluationError> {
+    pub fn get_map_entry(&self, reference: &Zid) -> Result<&DataEntry, EvaluationErrorKind> {
         match self.get_map()?.get(reference) {
             Some(v) => Ok(v),
-            None => Err(EvaluationError::MissingKey(reference.clone())),
+            None => Err(EvaluationErrorKind::MissingKey(reference.clone())),
         }
     }
 
     pub fn get_map_entry_option(
         &self,
         reference: &Zid,
-    ) -> Result<Option<&DataEntry>, EvaluationError> {
+    ) -> Result<Option<&DataEntry>, EvaluationErrorKind> {
         Ok(self.get_map()?.get(reference))
     }
 
     pub fn get_map_potential_reference<'l, T: WfParse<'l>>(
         &'l self,
         reference: &'l Zid,
-    ) -> Result<PotentialReference<'l, T>, EvaluationError> {
+    ) -> Result<PotentialReference<'l, T>, EvaluationErrorKind> {
         Ok(PotentialReference::parse(self.get_map_entry(reference)?)?)
     }
 
     pub fn get_map_potential_reference_option<'l, T: WfParse<'l>>(
         &'l self,
         reference: &'l Zid,
-    ) -> Result<Option<PotentialReference<'l, T>>, EvaluationError> {
+    ) -> Result<Option<PotentialReference<'l, T>>, EvaluationErrorKind> {
         if let Some(v) = self.get_map_entry_option(reference)? {
             Ok(Some(PotentialReference::parse(v)?))
         } else {
@@ -102,29 +102,29 @@ impl DataEntry {
         }
     }
 
-    pub fn get_map(&self) -> Result<&BTreeMap<Zid, DataEntry>, EvaluationError> {
+    pub fn get_map(&self) -> Result<&BTreeMap<Zid, DataEntry>, EvaluationErrorKind> {
         match self {
             Self::IdMap(map) => Ok(map),
-            _ => Err(EvaluationError::LowLevelNotAMap),
+            _ => Err(EvaluationErrorKind::LowLevelNotAMap),
         }
     }
 
-    pub fn get_array(&self) -> Result<&Vec<DataEntry>, EvaluationError> {
+    pub fn get_array(&self) -> Result<&Vec<DataEntry>, EvaluationErrorKind> {
         match self {
             Self::Array(array) => Ok(array),
-            _ => Err(EvaluationError::LowLevelNotAnArray),
+            _ => Err(EvaluationErrorKind::LowLevelNotAnArray),
         }
     }
 
-    pub fn get_str(&self) -> Result<&str, EvaluationError> {
+    pub fn get_str(&self) -> Result<&str, EvaluationErrorKind> {
         match self {
             Self::String(s) => Ok(s.as_ref()),
-            _ => Err(EvaluationError::LowLevelNotAString),
+            _ => Err(EvaluationErrorKind::LowLevelNotAString),
         }
     }
 
     /// transform the representation into something the running code can parse. Take care of typed list, that are only vec for the json format!
-    pub fn reify(&self, runner: &Runner) -> Result<DataEntry, EvaluationError> {
+    pub fn reify(&self, runner: &Runner) -> Result<DataEntry, EvaluationErrorKind> {
         //TODO: should we follow reference here? Confused...
         /*let self_pointed = PotentialReference::<WfUntyped<'_>>::new(self)
             .evaluate(runner)

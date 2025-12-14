@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 
-use crate::{DataEntry, EvaluationError, Zid};
+use crate::{DataEntry, EvaluationErrorKind, Zid};
 
 pub fn recurse_and_replace_placeholder(
     source_entry: &DataEntry,
     to_replace: &BTreeMap<Zid, &DataEntry>, // the function call unwraped
-) -> Result<DataEntry, EvaluationError> {
+) -> Result<DataEntry, EvaluationErrorKind> {
     const Z1K1: Zid = Zid::from_u64s_panic(Some(1), Some(1));
     const Z18K1: Zid = Zid::from_u64s_panic(Some(18), Some(1));
 
@@ -19,13 +19,13 @@ pub fn recurse_and_replace_placeholder(
                             key.get_str()
                                 .map_err(|e| e.trace("inside a Z18K1".to_string()))?,
                         )
-                        .map_err(EvaluationError::ParseZID)
+                        .map_err(EvaluationErrorKind::ParseZID)
                         .map_err(|e| e.trace("inside a Z18K1".to_string()))?;
                         //TODO: what to do in this case? Report the error. How to format it? idk
                         let new_entry = to_replace.get(&ref_to_use_to_replace).unwrap();
                         return Ok((*new_entry).clone());
                     } else {
-                        return Err(EvaluationError::MissingKey(Z18K1));
+                        return Err(EvaluationErrorKind::MissingKey(Z18K1));
                     }
                 }
             }

@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    DataEntry, EvaluationError, GlobalDatas, Zid,
+    DataEntry, EvaluationErrorKind, GlobalDatas, Zid,
     parse_tool::{
         WfFunction, WfFunctionCall, WfImplementation, WfParse, WfPersistentObject, WfTestCase,
         WfType, WfUntyped, parse_boolean,
@@ -27,32 +27,31 @@ impl Runner {
     }
 
     //TODO: check that it isn’t used outside of get_persistent_object
-    fn get_entry_for_reference(&self, reference: &Zid) -> Result<&DataEntry, EvaluationError> {
-        self.datas
-            .get(reference)
-            .map_or(Err(EvaluationError::MissingKey(reference.clone())), |v| {
-                Ok(v)
-            })
+    fn get_entry_for_reference(&self, reference: &Zid) -> Result<&DataEntry, EvaluationErrorKind> {
+        self.datas.get(reference).map_or(
+            Err(EvaluationErrorKind::MissingKey(reference.clone())),
+            |v| Ok(v),
+        )
     }
 
     pub fn get_persistent_object<'l, T: WfParse<'l>>(
         &'l self,
         reference: &Zid,
-    ) -> Result<WfPersistentObject<'l, T>, EvaluationError> {
+    ) -> Result<WfPersistentObject<'l, T>, EvaluationErrorKind> {
         Ok(
             WfPersistentObject::parse(self.get_entry_for_reference(reference)?)
                 .map_err(|e| e.trace(format!("For object {}", reference)))?,
         )
     }
 
-    pub fn get_true(&self) -> Result<&DataEntry, EvaluationError> {
+    pub fn get_true(&self) -> Result<&DataEntry, EvaluationErrorKind> {
         Ok(self
             .get_persistent_object::<WfUntyped>(&zid!(41))?
             .value
             .entry)
     }
 
-    pub fn get_false(&self) -> Result<&DataEntry, EvaluationError> {
+    pub fn get_false(&self) -> Result<&DataEntry, EvaluationErrorKind> {
         Ok(self
             .get_persistent_object::<WfUntyped>(&zid!(42))?
             .value
@@ -62,18 +61,18 @@ impl Runner {
     pub fn get_object_type<'l>(
         &'l self,
         data: &'l DataEntry,
-    ) -> Result<WfType<'l>, EvaluationError> {
+    ) -> Result<WfType<'l>, EvaluationErrorKind> {
         let zid = Zid::from_zid(
             data.get_map_entry(&zid!(1, 1))
                 .map_err(|e| e.trace_str("getting the type"))?
                 .get_str()
                 .map_err(|e| e.trace_str("getting the zid"))?,
         )
-        .map_err(EvaluationError::ParseZID)?;
+        .map_err(EvaluationErrorKind::ParseZID)?;
         Ok(self.get_persistent_object(&zid)?.value)
     }
 
-    pub fn get_bool(&self, b: bool) -> Result<&DataEntry, EvaluationError> {
+    pub fn get_bool(&self, b: bool) -> Result<&DataEntry, EvaluationErrorKind> {
         if b { self.get_true() } else { self.get_false() }
     }
 
@@ -82,7 +81,7 @@ impl Runner {
         &self,
         test_case_persistent: &WfPersistentObject<'l, WfTestCase<'l>>,
         implementation_persistent: &WfPersistentObject<'l, WfImplementation<'l>>,
-    ) -> Result<(), EvaluationError> {
+    ) -> Result<(), EvaluationErrorKind> {
         let function_identifier = implementation_persistent
             .value
             .function
@@ -140,19 +139,19 @@ impl Runner {
                 .map_err(|e| e.trace_str("parsing the validator result boolean"))?;
 
             if !test_result {
-                return Err(EvaluationError::TestSuiteFailed(test_fn_result.clone()));
+                return Err(EvaluationErrorKind::TestSuiteFailed(test_fn_result.clone()));
             }
 
             Ok(())
         })()
-        .map_err(|e| EvaluationError::TestResultInfo(test_fn_result, Box::new(e)))
+        .map_err(|e| EvaluationErrorKind::TestResultInfo(test_fn_result, Box::new(e)))
     }
 
     pub fn get_preferred_implementation<'l>(
         &'l self,
         function: &WfFunction<'l>,
         option: &RunnerOption,
-    ) -> Result<WfPersistentObject<'l, WfImplementation<'l>>, EvaluationError> {
+    ) -> Result<WfPersistentObject<'l, WfImplementation<'l>>, EvaluationErrorKind> {
         let function_id = function
             .identity
             .get_reference()
@@ -186,7 +185,7 @@ impl Runner {
                         .get_str()
                         .map_err(|e| e.trace("Parsing implementation list".to_string()))?,
                 )
-                .map_err(EvaluationError::ParseZID)
+                .map_err(EvaluationErrorKind::ParseZID)
                 .map_err(|e| e.trace("processing an implementation reference".to_string()))?;
 
                 let implementation_persistant = self
@@ -208,7 +207,7 @@ impl Runner {
             }
 
             // TODO: code
-            return Err(EvaluationError::Unimplemented(format!(
+            return Err(EvaluationErrorKind::Unimplemented(format!(
                 "code and builtins (and fail if none found) (for {})",
                 function_id
             )));
@@ -219,7 +218,7 @@ impl Runner {
         &self,
         function_call: &WfFunctionCall<'_>,
         option: &RunnerOption,
-    ) -> Result<DataEntry, EvaluationError> {
+    ) -> Result<DataEntry, EvaluationErrorKind> {
         let function = function_call
             .function
             .evaluate(&self)
@@ -242,7 +241,7 @@ impl Runner {
         implementation: &WfImplementation,
         function_call: &WfFunctionCall,
         option: &RunnerOption,
-    ) -> Result<DataEntry, EvaluationError> {
+    ) -> Result<DataEntry, EvaluationErrorKind> {
         if let Some(composition) = implementation.composition.as_ref() {
             return self.run_composition(
                 composition
@@ -273,7 +272,7 @@ impl Runner {
         composition: &DataEntry,
         function_call: &WfFunctionCall<'_>,
         option: &RunnerOption,
-    ) -> Result<DataEntry, EvaluationError> {
+    ) -> Result<DataEntry, EvaluationErrorKind> {
         // algorithm:
         // 1. replace all Z18 by their actual value
         // 2. work top-down, recursively. If entry is Z7, perform the function call. If not, recurse deeper
@@ -296,7 +295,7 @@ impl Runner {
         &self,
         entry: &DataEntry,
         option: &RunnerOption,
-    ) -> Result<DataEntry, EvaluationError> {
+    ) -> Result<DataEntry, EvaluationErrorKind> {
         const Z1K1: Zid = Zid::from_u64s_panic(Some(1), Some(1));
 
         match entry {
@@ -346,7 +345,7 @@ impl Runner {
         builtin: &DataEntry,
         function_call: &WfFunctionCall<'_>,
         option: &RunnerOption,
-    ) -> Result<DataEntry, EvaluationError> {
+    ) -> Result<DataEntry, EvaluationErrorKind> {
         let implementation_id = builtin
             .get_map_entry(&zid!(6, 1))
             .map_err(|e| e.trace("Getting the implementation id to run".to_string()))?
@@ -425,7 +424,7 @@ impl Runner {
                 return Ok(self.get_bool(boolean1 == boolean2)?.clone());
             }
             _ => {
-                return Err(EvaluationError::Unimplemented(format!(
+                return Err(EvaluationErrorKind::Unimplemented(format!(
                     "built-in {}",
                     implementation_id
                 )));

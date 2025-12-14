@@ -1,17 +1,17 @@
 use std::{collections::BTreeMap, fmt::Debug, marker::PhantomData};
 
-use crate::{DataEntry, EvaluationError, Runner, Zid};
+use crate::{DataEntry, EvaluationErrorKind, Runner, Zid};
 
-pub fn parse_zid_string(entry: &DataEntry) -> Result<Zid, EvaluationError> {
-    Ok(Zid::from_zid(entry.get_str()?).map_err(|e| EvaluationError::ParseZID(e))?)
+pub fn parse_zid_string(entry: &DataEntry) -> Result<Zid, EvaluationErrorKind> {
+    Ok(Zid::from_zid(entry.get_str()?).map_err(|e| EvaluationErrorKind::ParseZID(e))?)
 }
 
-pub fn parse_string_type(entry: &DataEntry) -> Result<&str, EvaluationError> {
+pub fn parse_string_type(entry: &DataEntry) -> Result<&str, EvaluationErrorKind> {
     check_type(entry, zid!(6))?;
     Ok(entry.get_map_entry(&zid!(6, 1))?.get_str()?)
 }
 
-pub fn parse_string_permissive(entry: &DataEntry) -> Result<&str, EvaluationError> {
+pub fn parse_string_permissive(entry: &DataEntry) -> Result<&str, EvaluationErrorKind> {
     if let Ok(v) = entry.get_str() {
         return Ok(v);
     } else {
@@ -28,7 +28,7 @@ pub fn raw_string_to_object_string(input: String) -> DataEntry {
     })
 }
 
-pub fn parse_boolean(entry: &DataEntry) -> Result<bool, EvaluationError> {
+pub fn parse_boolean(entry: &DataEntry) -> Result<bool, EvaluationErrorKind> {
     let text = entry.get_map_entry(&zid!(40, 1))?.get_str()?;
 
     match text {
@@ -39,11 +39,11 @@ pub fn parse_boolean(entry: &DataEntry) -> Result<bool, EvaluationError> {
 }
 
 /// Return an error if type does not match
-pub fn check_type(entry: &DataEntry, id: Zid) -> Result<(), EvaluationError> {
+pub fn check_type(entry: &DataEntry, id: Zid) -> Result<(), EvaluationErrorKind> {
     let read_type = parse_zid_string(entry.get_map_entry(&zid!(1, 1))?)
         .map_err(|e| e.trace_str("parsing the type zid"))?;
     if read_type != id {
-        return Err(EvaluationError::WrongType(read_type, id));
+        return Err(EvaluationErrorKind::WrongType(read_type, id));
     } else {
         return Ok(());
     }
@@ -73,7 +73,7 @@ impl<'l, T> MaybeOwned<'l, T> {
 }
 
 pub trait WfParse<'l>: Sized + Debug + Clone {
-    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError>;
+    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationErrorKind>;
 }
 
 #[derive(Debug, Clone)]
@@ -91,13 +91,13 @@ impl<'l, T: WfParse<'l>> PotentialReference<'l, T> {
     }
 
     /// Note that it only evaluate reference an not function calls or reference to argument
-    pub fn evaluate(&self, runner: &'l Runner) -> Result<T, EvaluationError> {
+    pub fn evaluate(&self, runner: &'l Runner) -> Result<T, EvaluationErrorKind> {
         Ok(match self.entry {
             DataEntry::Array(_) => T::parse(self.entry)?,
             DataEntry::String(entry) => {
                 runner
                     .get_persistent_object(
-                        &Zid::from_zid(entry).map_err(EvaluationError::ParseZID)?,
+                        &Zid::from_zid(entry).map_err(EvaluationErrorKind::ParseZID)?,
                     )?
                     .value
             }
@@ -105,19 +105,19 @@ impl<'l, T: WfParse<'l>> PotentialReference<'l, T> {
                 if Zid::from_zid(
                     entry
                         .get(&zid!(1, 1))
-                        .ok_or_else(|| EvaluationError::MissingKey(zid!(1, 1)))?
+                        .ok_or_else(|| EvaluationErrorKind::MissingKey(zid!(1, 1)))?
                         .get_str()?,
                 )
-                .map_err(EvaluationError::ParseZID)?
+                .map_err(EvaluationErrorKind::ParseZID)?
                     == zid!(9)
                 {
                     let reference_to = Zid::from_zid(
                         entry
                             .get(&zid!(9, 1))
-                            .ok_or_else(|| EvaluationError::MissingKey(zid!(9, 1)))?
+                            .ok_or_else(|| EvaluationErrorKind::MissingKey(zid!(9, 1)))?
                             .get_str()?,
                     )
-                    .map_err(EvaluationError::ParseZID)?;
+                    .map_err(EvaluationErrorKind::ParseZID)?;
                     runner.get_persistent_object(&reference_to)?.value
                 } else {
                     T::parse(self.entry)?
@@ -126,26 +126,28 @@ impl<'l, T: WfParse<'l>> PotentialReference<'l, T> {
         })
     }
 
-    pub fn get_reference(&self) -> Result<Zid, EvaluationError> {
+    pub fn get_reference(&self) -> Result<Zid, EvaluationErrorKind> {
         Ok(match self.entry {
-            DataEntry::Array(_) => return Err(EvaluationError::LowLevelNotAMap),
-            DataEntry::String(entry) => Zid::from_zid(entry).map_err(EvaluationError::ParseZID)?,
+            DataEntry::Array(_) => return Err(EvaluationErrorKind::LowLevelNotAMap),
+            DataEntry::String(entry) => {
+                Zid::from_zid(entry).map_err(EvaluationErrorKind::ParseZID)?
+            }
             DataEntry::IdMap(entry) => {
                 check_type(self.entry, zid!(9))?;
                 Zid::from_zid(
                     entry
                         .get(&zid!(9, 1))
-                        .ok_or_else(|| EvaluationError::MissingKey(zid!(9, 1)))?
+                        .ok_or_else(|| EvaluationErrorKind::MissingKey(zid!(9, 1)))?
                         .get_str()?,
                 )
-                .map_err(EvaluationError::ParseZID)?
+                .map_err(EvaluationErrorKind::ParseZID)?
             }
         })
     }
 }
 
 impl<'l, T: WfParse<'l>> WfParse<'l> for PotentialReference<'l, T> {
-    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError> {
+    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationErrorKind> {
         Ok(Self {
             entry,
             phantom: PhantomData::default(),
@@ -161,7 +163,7 @@ pub struct WfUntyped<'l> {
 }
 
 impl<'l> WfParse<'l> for WfUntyped<'l> {
-    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError> {
+    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationErrorKind> {
         Ok(Self { entry })
     }
 }
@@ -178,7 +180,7 @@ pub struct WfPersistentObject<'l, T: WfParse<'l>> {
 }
 
 impl<'l, T: WfParse<'l>> WfParse<'l> for WfPersistentObject<'l, T> {
-    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError> {
+    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationErrorKind> {
         check_type(&entry, zid!(2))?;
         Ok(Self {
             id: Zid::from_zid(
@@ -186,7 +188,7 @@ impl<'l, T: WfParse<'l>> WfParse<'l> for WfPersistentObject<'l, T> {
                     .map_err(|e| e.trace_str("parsing id"))?,
             )
             //TODO: Make Reference::from_zid directly return an EvaluationError
-            .map_err(EvaluationError::ParseZID)
+            .map_err(EvaluationErrorKind::ParseZID)
             .map_err(|e| e.trace_str("parsing id"))?,
             value: T::parse(entry.get_map_entry(&zid!(2, 2))?)
                 .map_err(|e| e.trace_str("parsing value"))?,
@@ -207,7 +209,7 @@ pub struct WfImplementation<'l> {
 }
 
 impl<'l> WfParse<'l> for WfImplementation<'l> {
-    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError> {
+    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationErrorKind> {
         Ok(Self {
             function: entry.get_map_potential_reference(&zid!(14, 1))?,
             composition: entry.get_map_potential_reference_option(&zid!(14, 2))?,
@@ -228,7 +230,7 @@ pub struct WfFunction<'l> {
 }
 
 impl<'l> WfParse<'l> for WfFunction<'l> {
-    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError> {
+    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationErrorKind> {
         Ok(Self {
             arguments: entry.get_map_potential_reference(&zid!(8, 1))?,
             return_type: entry.get_map_potential_reference(&zid!(8, 2))?,
@@ -248,7 +250,7 @@ pub struct WfTestCase<'l> {
 }
 
 impl<'l> WfParse<'l> for WfTestCase<'l> {
-    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError> {
+    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationErrorKind> {
         Ok(Self {
             function: entry.get_map_potential_reference(&zid!(20, 1))?,
             call: entry.get_map_potential_reference(&zid!(20, 2))?,
@@ -265,15 +267,15 @@ pub struct WfFunctionCall<'l> {
 }
 
 impl<'l> WfFunctionCall<'l> {
-    pub fn get_arg(&self, key: &Zid) -> Result<&'l DataEntry, EvaluationError> {
+    pub fn get_arg(&self, key: &Zid) -> Result<&'l DataEntry, EvaluationErrorKind> {
         Ok(self
             .args
             .get(key)
-            .ok_or_else(|| EvaluationError::MissingKey(key.to_owned()))?)
+            .ok_or_else(|| EvaluationErrorKind::MissingKey(key.to_owned()))?)
     }
 }
 impl<'l> WfParse<'l> for WfFunctionCall<'l> {
-    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError> {
+    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationErrorKind> {
         let function = entry.get_map_potential_reference(&zid!(7, 1))?;
         let mut args = BTreeMap::new();
         for (k, v) in entry.get_map()? {
@@ -300,7 +302,7 @@ pub struct WfType<'l> {
 }
 
 impl<'l> WfParse<'l> for WfType<'l> {
-    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError> {
+    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationErrorKind> {
         Ok(Self {
             identity: entry.get_map_potential_reference(&zid!(4, 1))?,
             keys: entry.get_map_potential_reference(&zid!(4, 2))?,
@@ -322,7 +324,7 @@ pub struct WfTypedList<'l, T: WfParse<'l>> {
 }
 
 impl<'l, T: WfParse<'l>> WfParse<'l> for WfTypedList<'l, T> {
-    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError> {
+    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationErrorKind> {
         let mut result = Vec::new();
         for (pos, value) in entry.get_array()?.iter().enumerate() {
             result
@@ -345,7 +347,7 @@ pub struct WfKey<'l> {
 }
 
 impl<'l> WfParse<'l> for WfKey<'l> {
-    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError> {
+    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationErrorKind> {
         Ok(Self {
             value_type: entry.get_map_potential_reference(&zid!(3, 1))?,
             key_id: parse_string_permissive(entry.get_map_entry(&zid!(3, 2))?)?,

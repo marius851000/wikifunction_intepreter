@@ -15,6 +15,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 
 [[package]]
+name = "map-macro"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb950a42259642e5a3483115aca87eebed2a64886993463af9c9739c205b8d3a"
+
+[[package]]
 name = "memchr"
 version = "2.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -148,6 +154,7 @@ name = "wikifunctions_interpreter"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "map-macro",
  "parse_mediawiki_dump_reboot",
  "serde",
  "serde_json",

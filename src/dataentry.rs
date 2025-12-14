@@ -1,3 +1,4 @@
+use map_macro::btree_map;
 use serde::{Deserialize, de::Visitor};
 
 use crate::{
@@ -132,13 +133,11 @@ impl DataEntry {
             .entry;
         */
 
-        let well_typed_pair = Self::IdMap({
-            let mut map = BTreeMap::new();
-            map.insert(zid!(1, 1), Self::String("Z7".to_string()));
-            map.insert(zid!(7, 1), Self::String("Z882".to_string()));
-            map.insert(zid!(882, 1), Self::String("Z39".to_string()));
-            map.insert(zid!(882, 2), Self::String("Z2".to_string()));
-            map
+        let well_typed_pair = Self::IdMap(btree_map! {
+            zid!(1, 1) => Self::String("Z7".to_string()),
+            zid!(7, 1) => Self::String("Z882".to_string()),
+            zid!(882, 1) => Self::String("Z39".to_string()),
+            zid!(882, 2) => Self::String("Z2".to_string())
         });
 
         match self {
@@ -153,24 +152,16 @@ impl DataEntry {
 
                 // typed pair are represented with Z1K1, K1 and K2
                 for (k, v) in map {
-                    result.push(Self::IdMap({
-                        let mut map = BTreeMap::new();
-                        map.insert(zid!(1, 1), well_typed_pair.clone());
-                        map.insert(
-                            Zid::from_u64s_panic(None, Some(1)),
-                            Self::IdMap({
-                                let mut map = BTreeMap::new();
-                                map.insert(zid!(1, 1), Self::String("Z39".to_string()));
-                                map.insert(zid!(39, 1), Self::String(k.to_string()));
-                                map
+                    result.push(Self::IdMap(btree_map! {
+                        zid!(1, 1) => well_typed_pair.clone(),
+                        Zid::from_u64s_panic(None, Some(1))
+                            => Self::IdMap(btree_map! {
+                                zid!(1, 1) => Self::String("Z39".to_string()),
+                                zid!(39, 1) => Self::String(k.to_string())
                             }),
-                        );
-                        map.insert(
-                            Zid::from_u64s_panic(None, Some(2)),
-                            v.reify(runner)
+                        Zid::from_u64s_panic(None, Some(2))
+                            => v.reify(runner)
                                 .map_err(|e| e.trace(format!("inside {}", k)))?,
-                        );
-                        map
                     }));
                 }
 
@@ -195,7 +186,7 @@ impl<'de> Deserialize<'de> for DataEntry {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use map_macro::btree_map;
 
     use crate::{DataEntry, Zid};
 
@@ -208,13 +199,8 @@ mod tests {
                 }"
             )
             .unwrap(),
-            DataEntry::IdMap({
-                let mut m = BTreeMap::new();
-                m.insert(
-                    Zid::from_u64s(Some(10), Some(1)).unwrap(),
-                    DataEntry::String("a\nb".to_string()),
-                );
-                m
+            DataEntry::IdMap(btree_map! {
+                zid!(10, 1) => DataEntry::String("a\nb".to_string())
             })
         );
         assert_eq!(
@@ -228,20 +214,12 @@ mod tests {
             )
             .unwrap(),
             DataEntry::IdMap({
-                let mut m = BTreeMap::new();
-                m.insert(Zid::from_u64s(Some(1), None).unwrap(), {
-                    let mut m2 = BTreeMap::new();
-                    m2.insert(
-                        Zid::from_u64s(Some(2), None).unwrap(),
-                        DataEntry::String("Z3".to_string()),
-                    );
-                    m2.insert(
-                        Zid::from_u64s(Some(4), None).unwrap(),
-                        DataEntry::String("Z2".to_string()),
-                    );
-                    DataEntry::IdMap(m2)
-                });
-                m
+                btree_map! {
+                    zid!(1) => DataEntry::IdMap(btree_map! {
+                        zid!(2) => DataEntry::String("Z3".to_string()),
+                        zid!(4) => DataEntry::String("Z2".to_string())
+                    })
+                }
             })
         );
 

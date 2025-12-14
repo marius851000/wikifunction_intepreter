@@ -6,7 +6,10 @@ use std::{
 use crate::{
     DataEntry, EvaluationError, GlobalDatas, Zid,
     evaluation_error::Provenance,
-    parse_tool::{WfParse, WfPersistentObject, parse_boolean, parse_zid_string},
+    parse_tool::{
+        WfFunction, WfFunctionCall, WfImplementation, WfParse, WfPersistentObject, WfTestCase,
+        WfUntyped, parse_boolean,
+    },
     recurse_and_replace_placeholder,
 };
 
@@ -33,10 +36,10 @@ impl Runner {
             })
     }
 
-    pub fn get_persistent_object(
-        &self,
+    pub fn get_persistent_object<'l, T: WfParse<'l>>(
+        &'l self,
         reference: &Zid,
-    ) -> Result<WfPersistentObject<'_>, EvaluationError> {
+    ) -> Result<WfPersistentObject<'l, T>, EvaluationError> {
         Ok(
             WfPersistentObject::parse(self.get_entry_for_reference(reference)?)
                 .map_err(|e| e.trace(format!("For object {}", reference)))?,
@@ -44,11 +47,17 @@ impl Runner {
     }
 
     pub fn get_true(&self) -> Result<&DataEntry, EvaluationError> {
-        Ok(self.get_persistent_object(&zid!(41))?.value)
+        Ok(self
+            .get_persistent_object::<WfUntyped>(&zid!(41))?
+            .value
+            .entry)
     }
 
     pub fn get_false(&self) -> Result<&DataEntry, EvaluationError> {
-        Ok(self.get_persistent_object(&zid!(42))?.value)
+        Ok(self
+            .get_persistent_object::<WfUntyped>(&zid!(42))?
+            .value
+            .entry)
     }
 
     pub fn get_bool(&self, b: bool) -> Result<&DataEntry, EvaluationError> {
@@ -56,18 +65,16 @@ impl Runner {
     }
 
     // return an error whether an error occur or the test result is incorrect
-    pub fn run_test_case(
+    pub fn run_test_case<'l>(
         &self,
-        test_case_persistent: &WfPersistentObject,
-        implementation_persistent: &WfPersistentObject,
+        test_case_persistent: &WfPersistentObject<'l, WfTestCase<'l>>,
+        implementation_persistent: &WfPersistentObject<'l, WfImplementation<'l>>,
     ) -> Result<(), EvaluationError> {
-        let function_identifier = parse_zid_string(
-            implementation_persistent
-                .value
-                .get_map_entry(&zid!(14, 1)) // implementation->function
-                .map_err(|e| e.trace("on the implementation to be tested".to_string()))?,
-        )
-        .map_err(|e| e.trace("Inside Z14K1 in the implementation to test".to_string()))?;
+        let function_identifier = implementation_persistent
+            .value
+            .function
+            .get_reference()
+            .unwrap(); //TODO: get rid of unwrap
 
         let mut runner_option = RunnerOption::default();
         runner_option.force_use_impl = Some({
@@ -78,8 +85,9 @@ impl Runner {
 
         let function_call = test_case_persistent
             .value
-            .get_map_entry(&zid!(20, 2))
-            .map_err(|e| e.trace("on the test case, inside Z2K2".to_string()))?;
+            .call
+            .evaluate(&self)
+            .map_err(|e| e.trace("on test_case->call".to_string()))?;
 
         let test_case_provenance = Provenance::Persistant(test_case_persistent.id);
         let function_call_provenance = Provenance::FromOther(
@@ -88,34 +96,34 @@ impl Runner {
         );
 
         let test_fn_result = self
-            .run_function_call(function_call, &function_call_provenance, &runner_option)
+            .run_function_call(&function_call, &function_call_provenance, &runner_option)
             .map_err(|e| e.trace("running function to test".to_string()))?;
 
         (|| {
             let validator = test_case_persistent
                 .value
-                .get_map_entry(&zid!(20, 3))
-                .map_err(|e| e.trace("on the test case, inside Z2K2".to_string()))?;
+                .result_validation
+                .evaluate(&self)
+                .map_err(|e| e.trace("getting the test validator".to_string()))?;
 
             // validator is a function call. replace first parameter with the result
 
-            let validator_function_id = parse_zid_string(
-                validator
-                    .get_map_entry(&zid!(7, 1))
-                    .map_err(|e| e.trace_str("on the validator"))?,
-            )
-            .map_err(|e| e.trace_str("on the validator"))?;
+            let validator_function_id = validator
+                .function
+                .evaluate(&self)
+                .map_err(|e| e.trace_str("getting the validator function"))?
+                .identity
+                .get_reference()
+                .map_err(|e| e.trace_str("getting the validator function identity"))?;
 
             let inserted_validation_ref =
                 Zid::from_u64s_panic(validator_function_id.get_z().map(|x| x.into()), Some(1));
 
             let mut validator_modified = validator.clone();
-            match &mut validator_modified {
-                DataEntry::IdMap(map) => {
-                    map.insert(inserted_validation_ref, test_fn_result.clone());
-                }
-                _ => todo!("error handling in that case"),
-            }
+
+            validator_modified
+                .args
+                .insert(inserted_validation_ref, &test_fn_result);
 
             let validator_result = self
                 .run_function_call(
@@ -137,13 +145,18 @@ impl Runner {
         .map_err(|e| EvaluationError::TestResultInfo(test_fn_result, Box::new(e)))
     }
 
-    pub fn get_preferred_implementation(
-        &self,
-        function_persistent: WfPersistentObject,
+    pub fn get_preferred_implementation<'l>(
+        &'l self,
+        function: &WfFunction<'l>,
         option: &RunnerOption,
-    ) -> Result<WfPersistentObject<'_>, EvaluationError> {
+    ) -> Result<WfPersistentObject<'l, WfImplementation<'l>>, EvaluationError> {
+        let function_id = function
+            .identity
+            .get_reference()
+            .map_err(|e| e.trace_str("getting id of function"))?;
+
         if let Some(force_use_impl) = &option.force_use_impl
-            && let Some(implementation_id) = force_use_impl.get(&function_persistent.id)
+            && let Some(implementation_id) = force_use_impl.get(&function_id)
         {
             Ok(self
                 .get_persistent_object(&implementation_id)
@@ -151,12 +164,13 @@ impl Runner {
                     e.trace("loading specifically specified implementation".to_string())
                 })?)
         } else {
-            let implementations_raw = function_persistent
-                .value
-                .get_map_entry(&zid!(8, 4)) // implementations
+            let implementations_raw = function
+                .implementations
+                .evaluate(&self)
                 .map_err(|e| e.trace("getting implementations".to_string()))?;
 
             let implementations_ref = implementations_raw
+                .entry
                 .get_array()
                 .map_err(|e| e.trace("getting implementations".to_string()))?;
 
@@ -173,23 +187,18 @@ impl Runner {
                 .map_err(|e| e.trace("processing an implementation reference".to_string()))?;
 
                 let implementation_persistant = self
-                    .get_persistent_object(&implementation_key)
+                    .get_persistent_object::<WfImplementation>(&implementation_key)
                     .map_err(|e| {
                         e.trace("trying to get a referrenced implementation".to_string())
                     })?;
 
-                let implementation_map = implementation_persistant
-                    .value
-                    .get_map()
-                    .map_err(|e| e.trace("processing an implementation".to_string()))?;
-
                 // check if it have a composition implementation
-                if let Some(_) = implementation_map.get(&zid!(14, 2)) {
+                if let Some(_) = implementation_persistant.value.composition {
                     // composition implementation
                     return Ok(implementation_persistant);
                 }
 
-                if let Some(_) = implementation_map.get(&zid!(14, 4)) {
+                if let Some(_) = implementation_persistant.value.builtin {
                     // builtin implementation
                     return Ok(implementation_persistant);
                 }
@@ -198,38 +207,31 @@ impl Runner {
             // TODO: code
             return Err(EvaluationError::Unimplemented(format!(
                 "code and builtins (and fail if none found) (for {})",
-                function_persistent.id
+                function_id
             )));
         }
     }
 
     pub fn run_function_call(
         &self,
-        function_call: &DataEntry,
+        function_call: &WfFunctionCall<'_>,
         function_call_provenance: &Provenance,
         option: &RunnerOption,
     ) -> Result<DataEntry, EvaluationError> {
-        const Z7K1: Zid = Zid::from_u64s_panic(Some(7), Some(1));
-        let function_id = parse_zid_string(
-            function_call
-                .get_map_entry(&Z7K1)
-                .map_err(|e| e.trace("trying to get the function to call".to_string()))?,
-        )
-        .map_err(|e| e.trace("trying to get the function to call".to_string()))?;
-        let function_persistant = self
-            .get_persistent_object(&function_id)
-            .map_err(|e| e.trace("trying to get the function to call".to_string()))?;
+        let function = function_call
+            .function
+            .evaluate(&self)
+            .map_err(|e| e.trace_str("getting function linked to function call"))?;
 
-        let implementation_persistant =
-            self.get_preferred_implementation(function_persistant, option)?;
+        let implementation_persistant = self.get_preferred_implementation(&function, option)?;
 
         let implementation_provenance = Provenance::Persistant(implementation_persistant.id);
 
         return Ok(self
             .run_implementation(
-                implementation_persistant.value,
+                &implementation_persistant.value,
                 &implementation_provenance,
-                function_call,
+                &function_call,
                 function_call_provenance,
                 option,
             )
@@ -243,16 +245,18 @@ impl Runner {
 
     pub fn run_implementation(
         &self,
-        implementation: &DataEntry,
+        implementation: &WfImplementation,
         implementation_provenance: &Provenance,
-        function_call: &DataEntry,
+        function_call: &WfFunctionCall,
         function_call_provenance: &Provenance,
         option: &RunnerOption,
     ) -> Result<DataEntry, EvaluationError> {
-        let impl_map = implementation.get_map()?;
-        if let Some(composition) = impl_map.get(&zid!(14, 2)) {
+        if let Some(composition) = implementation.composition.as_ref() {
             return self.run_composition(
-                composition,
+                composition
+                    .evaluate(&self)
+                    .map_err(|e| e.trace_str("getting the composition implementation"))?
+                    .entry,
                 &implementation_provenance.to_other(vec![zid!(14, 2)]),
                 function_call,
                 function_call_provenance,
@@ -260,8 +264,16 @@ impl Runner {
             );
         };
 
-        if let Some(builtin) = impl_map.get(&zid!(14, 4)) {
-            return self.run_builtin(builtin, function_call, function_call_provenance, option);
+        if let Some(builtin) = implementation.builtin.as_ref() {
+            return self.run_builtin(
+                builtin
+                    .evaluate(&self)
+                    .map_err(|e| e.trace_str("getting the builtin implementation"))?
+                    .entry,
+                function_call,
+                function_call_provenance,
+                option,
+            );
         }
 
         todo!("code implementation and error if no impl are present")
@@ -271,7 +283,7 @@ impl Runner {
         &self,
         composition: &DataEntry,
         composition_provenance: &Provenance,
-        function_call: &DataEntry,
+        function_call: &WfFunctionCall<'_>,
         function_call_provenance: &Provenance,
         option: &RunnerOption,
     ) -> Result<DataEntry, EvaluationError> {
@@ -279,13 +291,8 @@ impl Runner {
         // 1. replace all Z18 by their actual value
         // 2. work top-down, recursively. If entry is Z7, perform the function call. If not, recurse deeper
 
-        let composition_with_substitution_done = match function_call {
-            DataEntry::IdMap(to_replace) => {
-                //TODO: remove unwrap
-                recurse_and_replace_placeholder(composition, to_replace).unwrap()
-            }
-            _ => return Err(EvaluationError::LowLevelNotAMap),
-        };
+        let composition_with_substitution_done =
+            recurse_and_replace_placeholder(composition, &function_call.args)?;
 
         Ok(self
             .recurse_call_function(
@@ -318,7 +325,12 @@ impl Runner {
                         .map_err(|e| e.trace("Inside Z1K1".to_string()))?
                         == "Z7"
                     {
-                        return self.run_function_call(&entry, provenance, option);
+                        return self.run_function_call(
+                            &WfFunctionCall::parse(entry)
+                                .map_err(|e| e.trace_str("parsing a function call"))?,
+                            provenance,
+                            option,
+                        );
                     }
                 }
 
@@ -351,7 +363,7 @@ impl Runner {
     pub fn run_builtin(
         &self,
         builtin: &DataEntry,
-        function_call: &DataEntry,
+        function_call: &WfFunctionCall<'_>,
         function_call_provenance: &Provenance,
         option: &RunnerOption,
     ) -> Result<DataEntry, EvaluationError> {
@@ -376,7 +388,7 @@ impl Runner {
             let implementation_provenance = Provenance::Persistant(impl_to_use);
 
             return self.run_implementation(
-                implementation_persistant.value,
+                &implementation_persistant.value,
                 &implementation_provenance,
                 function_call,
                 function_call_provenance,
@@ -391,7 +403,7 @@ impl Runner {
             "Z902" => {
                 let condition = self
                     .recurse_call_function(
-                        function_call.get_map_entry(&zid!(802, 1))?,
+                        function_call.get_arg(&zid!(802, 1))?,
                         &provenance_other,
                         option,
                     )
@@ -407,7 +419,7 @@ impl Runner {
 
                 let result = self
                     .recurse_call_function(
-                        function_call.get_map_entry(&entry_to_use)?,
+                        function_call.get_arg(&entry_to_use)?,
                         &provenance_other,
                         option,
                     )
@@ -418,7 +430,7 @@ impl Runner {
             // Is empty (typed) list
             "Z913" => {
                 let list = self.recurse_call_function(
-                    function_call.get_map_entry(&zid!(813, 1))?,
+                    function_call.get_arg(&zid!(813, 1))?,
                     &provenance_other,
                     option,
                 )?;
@@ -430,7 +442,7 @@ impl Runner {
             "Z944" => {
                 let boolean1 = self
                     .recurse_call_function(
-                        function_call.get_map_entry(&zid!(844, 1))?,
+                        function_call.get_arg(&zid!(844, 1))?,
                         &provenance_other,
                         option,
                     )
@@ -439,7 +451,7 @@ impl Runner {
                     parse_boolean(&boolean1).map_err(|e| e.trace_str("parsing first boolean"))?;
                 let boolean2 = self
                     .recurse_call_function(
-                        function_call.get_map_entry(&zid!(844, 2))?,
+                        function_call.get_arg(&zid!(844, 2))?,
                         &provenance_other,
                         option,
                     )

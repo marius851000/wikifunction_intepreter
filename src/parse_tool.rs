@@ -1,4 +1,4 @@
-use std::{fmt::Debug, marker::PhantomData};
+use std::{collections::BTreeMap, fmt::Debug, marker::PhantomData};
 
 use crate::{DataEntry, EvaluationError, Runner, Zid};
 
@@ -32,6 +32,29 @@ pub fn check_type(entry: &DataEntry, id: Zid) -> Result<(), EvaluationError> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum MaybeOwned<'l, T> {
+    Owned(T),
+    Referenced(&'l T),
+}
+
+impl<'l, T> MaybeOwned<'l, T> {
+    pub fn from_owned(owned: T) -> Self {
+        Self::Owned(owned)
+    }
+
+    pub fn from_reference(reference: &'l T) -> Self {
+        Self::Referenced(&reference)
+    }
+
+    pub fn get(&self) -> &T {
+        match self {
+            Self::Owned(o) => &o,
+            Self::Referenced(r) => r,
+        }
+    }
+}
+
 pub trait WfParse<'l>: Sized + Debug + Clone {
     fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError>;
 }
@@ -45,8 +68,8 @@ pub struct PotentialReference<'l, T: WfParse<'l>> {
 impl<'l, T: WfParse<'l>> PotentialReference<'l, T> {
     /// Note that it only evaluate reference an not function calls or reference to argument
     pub fn evaluate(&self, runner: &'l Runner) -> Result<T, EvaluationError> {
-        let entry = match self.entry {
-            DataEntry::Array(_) => self.entry,
+        Ok(match self.entry {
+            DataEntry::Array(_) => T::parse(self.entry)?,
             DataEntry::String(entry) => {
                 runner
                     .get_persistent_object(
@@ -73,12 +96,27 @@ impl<'l, T: WfParse<'l>> PotentialReference<'l, T> {
                     .map_err(EvaluationError::ParseZID)?;
                     runner.get_persistent_object(&reference_to)?.value
                 } else {
-                    self.entry
+                    T::parse(self.entry)?
                 }
             }
-        };
+        })
+    }
 
-        Ok(T::parse(entry)?)
+    pub fn get_reference(&self) -> Result<Zid, EvaluationError> {
+        Ok(match self.entry {
+            DataEntry::Array(_) => return Err(EvaluationError::LowLevelNotAMap),
+            DataEntry::String(entry) => Zid::from_zid(entry).map_err(EvaluationError::ParseZID)?,
+            DataEntry::IdMap(entry) => {
+                check_type(self.entry, zid!(9))?;
+                Zid::from_zid(
+                    entry
+                        .get(&zid!(9, 1))
+                        .ok_or_else(|| EvaluationError::MissingKey(zid!(9, 1)))?
+                        .get_str()?,
+                )
+                .map_err(EvaluationError::ParseZID)?
+            }
+        })
     }
 }
 
@@ -91,12 +129,14 @@ impl<'l, T: WfParse<'l>> WfParse<'l> for PotentialReference<'l, T> {
     }
 }
 
+// Note: those only work on reference. For returning thing across function that might contain thing with not enought lifetime, directly return a cloned DataEntry.
+
 #[derive(Debug, Clone)]
-pub struct WpUntyped<'l> {
+pub struct WfUntyped<'l> {
     pub entry: &'l DataEntry,
 }
 
-impl<'l> WfParse<'l> for WpUntyped<'l> {
+impl<'l> WfParse<'l> for WfUntyped<'l> {
     fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError> {
         Ok(Self { entry })
     }
@@ -104,16 +144,16 @@ impl<'l> WfParse<'l> for WpUntyped<'l> {
 
 /// a Z2
 #[derive(Clone, Debug)]
-pub struct WfPersistentObject<'l> {
-    // assume both id and value are not Z9/reference
+pub struct WfPersistentObject<'l, T: WfParse<'l>> {
+    // assume both id and value are not Z9/reference (to guarantee absence of double reference)
     pub id: Zid,
-    pub value: &'l DataEntry,
-    pub labels: PotentialReference<'l, WpUntyped<'l>>,
-    pub aliases: PotentialReference<'l, WpUntyped<'l>>,
-    pub short_description: PotentialReference<'l, WpUntyped<'l>>,
+    pub value: T,
+    pub labels: PotentialReference<'l, WfUntyped<'l>>,
+    pub aliases: PotentialReference<'l, WfUntyped<'l>>,
+    pub short_description: PotentialReference<'l, WfUntyped<'l>>,
 }
 
-impl<'l> WfParse<'l> for WfPersistentObject<'l> {
+impl<'l, T: WfParse<'l>> WfParse<'l> for WfPersistentObject<'l, T> {
     fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError> {
         check_type(&entry, zid!(2))?;
         Ok(Self {
@@ -124,10 +164,100 @@ impl<'l> WfParse<'l> for WfPersistentObject<'l> {
             //TODO: Make Reference::from_zid directly return an EvaluationError
             .map_err(EvaluationError::ParseZID)
             .map_err(|e| e.trace_str("parsing id"))?,
-            value: entry.get_map_entry(&zid!(2, 2))?,
+            value: T::parse(entry.get_map_entry(&zid!(2, 2))?)
+                .map_err(|e| e.trace_str("parsing value"))?,
             labels: entry.get_map_potential_reference(&zid!(2, 3))?,
             aliases: entry.get_map_potential_reference(&zid!(2, 4))?,
             short_description: entry.get_map_potential_reference(&zid!(2, 5))?,
         })
+    }
+}
+
+/// A Z14
+#[derive(Clone, Debug)]
+pub struct WfImplementation<'l> {
+    pub function: PotentialReference<'l, WfFunction<'l>>,
+    pub composition: Option<PotentialReference<'l, WfUntyped<'l>>>,
+    pub code: Option<PotentialReference<'l, WfUntyped<'l>>>,
+    pub builtin: Option<PotentialReference<'l, WfUntyped<'l>>>, //TODO: A Function?
+}
+
+impl<'l> WfParse<'l> for WfImplementation<'l> {
+    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError> {
+        Ok(Self {
+            function: entry.get_map_potential_reference(&zid!(14, 1))?,
+            composition: entry.get_map_potential_reference_option(&zid!(14, 2))?,
+            code: entry.get_map_potential_reference_option(&zid!(14, 3))?,
+            builtin: entry.get_map_potential_reference_option(&zid!(14, 4))?,
+        })
+    }
+}
+
+/// A Z8
+#[derive(Clone, Debug)]
+pub struct WfFunction<'l> {
+    pub arguments: PotentialReference<'l, WfUntyped<'l>>,
+    pub return_type: PotentialReference<'l, WfUntyped<'l>>,
+    pub testers: PotentialReference<'l, WfUntyped<'l>>,
+    pub implementations: PotentialReference<'l, WfUntyped<'l>>,
+    pub identity: PotentialReference<'l, WfFunction<'l>>,
+}
+
+impl<'l> WfParse<'l> for WfFunction<'l> {
+    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError> {
+        Ok(Self {
+            arguments: entry.get_map_potential_reference(&zid!(8, 1))?,
+            return_type: entry.get_map_potential_reference(&zid!(8, 2))?,
+            testers: entry.get_map_potential_reference(&zid!(8, 3))?,
+            implementations: entry.get_map_potential_reference(&zid!(8, 4))?,
+            identity: entry.get_map_potential_reference(&zid!(8, 5))?,
+        })
+    }
+}
+
+/// A Z20
+#[derive(Clone, Debug)]
+pub struct WfTestCase<'l> {
+    pub function: PotentialReference<'l, WfFunction<'l>>,
+    pub call: PotentialReference<'l, WfFunctionCall<'l>>,
+    pub result_validation: PotentialReference<'l, WfFunctionCall<'l>>,
+}
+
+impl<'l> WfParse<'l> for WfTestCase<'l> {
+    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError> {
+        Ok(Self {
+            function: entry.get_map_potential_reference(&zid!(20, 1))?,
+            call: entry.get_map_potential_reference(&zid!(20, 2))?,
+            result_validation: entry.get_map_potential_reference(&zid!(20, 3))?,
+        })
+    }
+}
+
+/// A Z7
+#[derive(Debug, Clone)]
+pub struct WfFunctionCall<'l> {
+    pub function: PotentialReference<'l, WfFunction<'l>>,
+    pub args: BTreeMap<Zid, &'l DataEntry>,
+}
+
+impl<'l> WfFunctionCall<'l> {
+    pub fn get_arg(&self, key: &Zid) -> Result<&'l DataEntry, EvaluationError> {
+        Ok(self
+            .args
+            .get(key)
+            .ok_or_else(|| EvaluationError::MissingKey(key.to_owned()))?)
+    }
+}
+impl<'l> WfParse<'l> for WfFunctionCall<'l> {
+    fn parse(entry: &'l DataEntry) -> Result<Self, EvaluationError> {
+        let function = entry.get_map_potential_reference(&zid!(7, 1))?;
+        let mut args = BTreeMap::new();
+        for (k, v) in entry.get_map()? {
+            if k == &zid!(1, 1) || k == &zid!(7, 1) {
+                continue;
+            }
+            args.insert(k.clone(), v);
+        }
+        Ok(Self { function, args })
     }
 }

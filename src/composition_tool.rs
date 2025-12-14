@@ -4,7 +4,7 @@ use crate::{DataEntry, EvaluationError, Zid};
 
 pub fn recurse_and_replace_placeholder(
     source_entry: &DataEntry,
-    to_replace: &BTreeMap<Zid, DataEntry>, // the function call unwraped
+    to_replace: &BTreeMap<Zid, &DataEntry>, // the function call unwraped
 ) -> Result<DataEntry, EvaluationError> {
     const Z1K1: Zid = Zid::from_u64s_panic(Some(1), Some(1));
     const Z18K1: Zid = Zid::from_u64s_panic(Some(18), Some(1));

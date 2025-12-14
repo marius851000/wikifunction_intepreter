@@ -1,6 +1,6 @@
 use std::{fs::File, io::BufReader, sync::Arc};
 
-use wikifunctions_interpreter::{GlobalDatas, Runner, RunnerOption, Zid};
+use wikifunctions_interpreter::{GlobalDatas, Runner, RunnerOption, Zid, parse_tool::WfTestCase};
 
 fn main() -> anyhow::Result<()> {
     let file =
@@ -21,23 +21,19 @@ fn main() -> anyhow::Result<()> {
         // other stuff
         // "Z10071"
     ] {
-        let test_case_persistant = runner
-            .get_persistent_object(&Zid::from_zid(test_to_run).unwrap())
+        let test_case_persistent = runner
+            .get_persistent_object::<WfTestCase>(&Zid::from_zid(test_to_run).unwrap())
             .unwrap();
-        let function_id_string = test_case_persistant
+        let function = test_case_persistent
             .value
-            .get_map_entry(&Zid::from_u64s_panic(Some(20), Some(1)))
-            .unwrap()
-            .get_str()
-            .unwrap();
-        let function_persistant = runner
-            .get_persistent_object(&Zid::from_zid(function_id_string).unwrap())
+            .function
+            .evaluate(&runner)
             .unwrap();
         let implementation_persistant = runner
-            .get_preferred_implementation(function_persistant, &RunnerOption::default())
+            .get_preferred_implementation(&function, &RunnerOption::default())
             .unwrap();
         runner
-            .run_test_case(&test_case_persistant, &implementation_persistant)
+            .run_test_case(&test_case_persistent, &implementation_persistant)
             .map_err(|e| e.trace(format!("running the test case {}", test_to_run)))?;
     }
 

@@ -77,11 +77,29 @@ impl DataEntry {
         }
     }
 
+    pub fn get_map_entry_option(
+        &self,
+        reference: &Zid,
+    ) -> Result<Option<&DataEntry>, EvaluationError> {
+        Ok(self.get_map()?.get(reference))
+    }
+
     pub fn get_map_potential_reference<'l, T: WfParse<'l>>(
         &'l self,
         reference: &'l Zid,
     ) -> Result<PotentialReference<'l, T>, EvaluationError> {
         Ok(PotentialReference::parse(self.get_map_entry(reference)?)?)
+    }
+
+    pub fn get_map_potential_reference_option<'l, T: WfParse<'l>>(
+        &'l self,
+        reference: &'l Zid,
+    ) -> Result<Option<PotentialReference<'l, T>>, EvaluationError> {
+        if let Some(v) = self.get_map_entry_option(reference)? {
+            Ok(Some(PotentialReference::parse(v)?))
+        } else {
+            Ok(None)
+        }
     }
 
     pub fn get_map(&self) -> Result<&BTreeMap<Zid, DataEntry>, EvaluationError> {
